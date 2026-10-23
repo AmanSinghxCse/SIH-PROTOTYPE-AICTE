@@ -72,30 +72,10 @@ export const App: React.FC = () => {
                 </ProtectedRoute>
               }
             />
-            <Route
-              path="/portal/verification"
-              element={
-                <ProtectedRoute allowedRoles={['verification', 'admin']}>
-                  <VerificationDashboardPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/portal/supervisor"
-              element={
-                <ProtectedRoute allowedRoles={['supervisor', 'admin']}>
-                  <SupervisorDashboardPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/portal/management"
-              element={
-                <ProtectedRoute allowedRoles={['management', 'admin']}>
-                  <ManagementDashboardPage />
-                </ProtectedRoute>
-              }
-            />
+            {/* Legacy Portal Route Redirects to Consolidated Admin Portal */}
+            <Route path="/portal/verification" element={<Navigate to="/portal/admin" replace />} />
+            <Route path="/portal/supervisor" element={<Navigate to="/portal/admin" replace />} />
+            <Route path="/portal/management" element={<Navigate to="/portal/admin" replace />} />
 
             {/* 4. Bureau Monitoring Dashboard (Unified) */}
             <Route path="/dashboard" element={<DashboardPage />} />

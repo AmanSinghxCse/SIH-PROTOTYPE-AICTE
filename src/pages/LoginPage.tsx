@@ -98,13 +98,13 @@ export const LoginPage: React.FC = () => {
               </p>
             </div>
 
-            {/* Quick Demo Role Cards */}
+            {/* Quick Demo Role Cards (Strictly 3 Portals) */}
             <div className="space-y-2">
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                Instant 1-Click Role Login
+                Instant 1-Click Portal Access
               </span>
-              <div className="grid grid-cols-2 gap-2">
-                {INITIAL_USERS.map(u => (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {INITIAL_USERS.filter(u => ['public', 'admin', 'officer'].includes(u.role)).map(u => (
                   <button
                     key={u.role}
                     type="button"
@@ -112,9 +112,9 @@ export const LoginPage: React.FC = () => {
                     className="p-2.5 rounded-lg border border-slate-200 hover:border-blue-500 hover:bg-blue-50/50 transition-all text-left group"
                   >
                     <div className="text-xs font-bold text-slate-900 group-hover:text-blue-700 capitalize">
-                      {u.role}
+                      {u.role === 'public' ? 'Public Portal' : u.role === 'admin' ? 'Administration' : 'Bureau Officer'}
                     </div>
-                    <div className="text-[10px] text-slate-500 truncate">{u.name}</div>
+                    <div className="text-[10px] text-slate-500 truncate">{u.name.split(' (')[0]}</div>
                   </button>
                 ))}
               </div>
@@ -162,17 +162,16 @@ export const LoginPage: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Assigned Authority Role
+                  Designated Portal Authority
                 </label>
                 <select
                   value={selectedRole}
                   onChange={e => setSelectedRole(e.target.value as UserRole)}
                   className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded-lg focus:bg-white focus:outline-none"
                 >
-                  <option value="admin">Administrator (Full Access)</option>
-                  <option value="officer">Bureau Officer (Case Handling)</option>
-                  <option value="supervisor">Supervisor (Escalation Review)</option>
-                  <option value="management">Management User (Read-only Analytics)</option>
+                  <option value="public">Public Portal (Citizen / Student)</option>
+                  <option value="admin">Administration Portal (Nodal Governance)</option>
+                  <option value="officer">Bureau Officer Portal (Inquiry Handling)</option>
                 </select>
               </div>
 

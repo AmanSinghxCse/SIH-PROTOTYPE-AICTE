@@ -102,71 +102,39 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenGuidedTour }) => {
     : [];
 
   const roles: Array<{ role: UserRole; label: string; desc: string; path: string }> = [
-    { role: 'public', label: 'Public / Complainant', desc: 'File & track complaints, view timeline', path: '/portal/public' },
-    { role: 'admin', label: 'Administrator', desc: 'Full system control, allocation, audit trail', path: '/portal/admin' },
-    { role: 'officer', label: 'Bureau Officer', desc: 'Active inquiry desk, hearings, notes', path: '/portal/officer' },
-    { role: 'verification', label: 'Verification Staff', desc: 'Document verification & institution check', path: '/portal/verification' },
-    { role: 'supervisor', label: 'Supervisor', desc: 'Appellate oversight, closure sign-off', path: '/portal/supervisor' },
-    { role: 'management', label: 'Management User', desc: 'Executive macro analytics & policies', path: '/portal/management' }
+    { role: 'public', label: 'Public Portal', desc: 'Register complaints, track status, and view updates', path: '/portal/public' },
+    { role: 'admin', label: 'Administration Portal', desc: 'Oversee allocations, registry, users & reports', path: '/portal/admin' },
+    { role: 'officer', label: 'Bureau Officer Portal', desc: 'Review assigned complaints & update progress', path: '/portal/officer' }
   ];
 
-  // Dynamic primaryNavItems based on role
+  // Dynamic primaryNavItems based on role matching exact section 7 specifications
   const getNavItemsForRole = () => {
     switch (currentUser.role) {
       case 'public':
         return [
-          { to: '/portal/public', label: 'My Citizen Portal', icon: LayoutDashboard },
-          { to: '/register', label: 'Register Grievance', icon: PlusCircle },
-          { to: '/institutions', label: 'Approved Institutions', icon: Building2 },
-          { to: '/workflow', label: '7-Stage Redressal Process', icon: GitBranch },
-          { to: '/about', label: 'Guidelines & Specs', icon: FileCheck2 }
+          { to: '/', label: 'Home', icon: Home },
+          { to: '/register', label: 'Register Complaint', icon: PlusCircle },
+          { to: '/portal/public', label: 'Track Complaint', icon: Search },
+          { to: '/portal/public', label: 'My Complaints', icon: FileText }
         ];
       case 'officer':
         return [
-          { to: '/portal/officer', label: 'Bureau Inquiry Desk', icon: LayoutDashboard },
-          { to: '/registry', label: 'Complaint Registry', icon: FileText, badge: complaints.length },
-          { to: '/case-intelligence', label: 'Case Intelligence', icon: GitCompare, badge: pendingSuggestions.length > 0 ? pendingSuggestions.length : null },
-          { to: '/institutions', label: 'Institution Profiles', icon: Building2 },
-          { to: '/alerts', label: 'SLA Alerts', icon: AlertTriangle, badge: overdueComplaints.length > 0 ? overdueComplaints.length : null },
-          { to: '/workflow', label: 'Circular Lifecycle', icon: GitBranch }
-        ];
-      case 'verification':
-        return [
-          { to: '/portal/verification', label: 'Scrutiny Desk', icon: LayoutDashboard },
-          { to: '/registry', label: 'Intake Queue', icon: FileText, badge: complaints.length },
-          { to: '/institutions', label: 'Institution Directory', icon: Building2 },
-          { to: '/workflow', label: 'Ingestion Stages', icon: GitBranch },
-          { to: '/about', label: 'Architecture', icon: FileCheck2 }
-        ];
-      case 'supervisor':
-        return [
-          { to: '/portal/supervisor', label: 'Appellate Oversight', icon: LayoutDashboard },
-          { to: '/registry', label: 'Central Registry', icon: FileText, badge: complaints.length },
-          { to: '/alerts', label: 'Escalations & Overdue', icon: AlertTriangle, badge: overdueComplaints.length > 0 ? overdueComplaints.length : null },
-          { to: '/analytics', label: 'Bureau QA Metrics', icon: BarChart3 },
-          { to: '/audit', label: 'Audit Trail', icon: FileCheck2 },
-          { to: '/workflow', label: 'Circular Lifecycle', icon: GitBranch }
-        ];
-      case 'management':
-        return [
-          { to: '/portal/management', label: 'Executive Dashboard', icon: LayoutDashboard },
-          { to: '/analytics', label: 'Macro Trends', icon: BarChart3 },
-          { to: '/institutions', label: 'Institutional History', icon: Building2 },
-          { to: '/workflow', label: 'Governance Workflow', icon: GitBranch },
-          { to: '/about', label: 'Architecture', icon: FileCheck2 }
+          { to: '/portal/officer', label: 'Dashboard', icon: LayoutDashboard },
+          { to: '/portal/officer', label: 'Assigned Cases', icon: FileText, badge: complaints.filter(c => c.bureauId === (currentUser.bureauId || 'BUR-GRV')).length },
+          { to: '/institutions', label: 'Institution History', icon: Building2 },
+          { to: '/case-intelligence', label: 'Related Cases', icon: GitCompare, badge: pendingSuggestions.length > 0 ? pendingSuggestions.length : null },
+          { to: '/portal/officer', label: 'Case Updates', icon: Clock }
         ];
       case 'admin':
       default:
         return [
-          { to: '/portal/admin', label: 'Admin Portal', icon: Shield },
-          { to: '/dashboard', label: 'All Bureaus', icon: LayoutDashboard },
+          { to: '/portal/admin', label: 'Dashboard', icon: Shield },
           { to: '/registry', label: 'Complaint Registry', icon: FileText, badge: complaints.length },
-          { to: '/institutions', label: 'Institution Profiles', icon: Building2 },
-          { to: '/case-intelligence', label: 'Case Intelligence', icon: GitCompare, badge: pendingSuggestions.length > 0 ? pendingSuggestions.length : null },
-          { to: '/alerts', label: 'Alerts', icon: AlertTriangle, badge: overdueComplaints.length > 0 ? overdueComplaints.length : null },
-          { to: '/analytics', label: 'Analytics', icon: BarChart3 },
-          { to: '/audit', label: 'Audit Logs', icon: FileCheck2 },
-          { to: '/workflow', label: 'Workflow', icon: GitBranch }
+          { to: '/portal/admin', label: 'Assignments', icon: UserCheck },
+          { to: '/institutions', label: 'Institutions', icon: Building2 },
+          { to: '/analytics', label: 'Analytics and Reports', icon: BarChart3 },
+          { to: '/portal/admin', label: 'User Management', icon: LayoutDashboard },
+          { to: '/audit', label: 'Audit History', icon: FileCheck2 }
         ];
     }
   };
@@ -475,7 +443,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenGuidedTour }) => {
                       className="text-[#0B477F] font-bold hover:underline flex items-center gap-1"
                     >
                       <Building2 className="w-3.5 h-3.5" />
-                      <span>All 6 Portals</span>
+                      <span>Select Portal</span>
                     </button>
                     <button
                       onClick={() => {

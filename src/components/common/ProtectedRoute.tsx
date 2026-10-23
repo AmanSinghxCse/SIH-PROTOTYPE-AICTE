@@ -19,13 +19,20 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles, ch
   }
 
   const roleLabels: Record<UserRole, string> = {
-    public: 'Public / Complainant Portal',
-    admin: 'Central Administration Portal',
+    public: 'Public Portal',
+    admin: 'Administration Portal',
     officer: 'Bureau Officer Portal',
-    verification: 'Scrutiny & Verification Staff Portal',
-    supervisor: 'Appellate Supervisor Portal',
-    management: 'Executive Management Portal'
+    verification: 'Administration Portal (Verification)',
+    supervisor: 'Administration Portal (Appellate)',
+    management: 'Administration Portal (Analytics)'
   };
+
+  const userPortalPath =
+    currentUser.role === 'public'
+      ? '/portal/public'
+      : currentUser.role === 'officer'
+      ? '/portal/officer'
+      : '/portal/admin';
 
   return (
     <div className="min-h-[70vh] flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
@@ -57,7 +64,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles, ch
 
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
           <Link
-            to={`/portal/${currentUser.role}`}
+            to={userPortalPath}
             className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-[#0B477F] text-white text-sm font-semibold rounded-lg hover:bg-[#155A91] transition-colors shadow-sm"
           >
             <ArrowLeft className="w-4 h-4" />

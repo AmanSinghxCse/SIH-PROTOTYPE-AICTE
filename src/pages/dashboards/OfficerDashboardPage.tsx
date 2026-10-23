@@ -172,18 +172,18 @@ export const OfficerDashboardPage: React.FC = () => {
         </div>
       </div>
 
-      {/* 6 Metric Cards */}
+      {/* 6 Metric Cards matching exact specification */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <div className="bg-white rounded-xl border border-[#D6E4F0] p-4 shadow-sm">
-          <span className="text-[11px] font-bold text-[#53677D] uppercase">My Bureau</span>
+          <span className="text-[11px] font-bold text-[#53677D] uppercase">Assigned to My Bureau</span>
           <p className="text-2xl font-black text-[#17324D] mt-1">{stats.total}</p>
-          <span className="text-[10px] text-[#53677D]">Allocated files</span>
+          <span className="text-[10px] text-[#53677D]">Total bureau docket</span>
         </div>
 
         <div className="bg-white rounded-xl border border-[#D6E4F0] p-4 shadow-sm">
-          <span className="text-[11px] font-bold text-blue-700 uppercase">New Intakes</span>
+          <span className="text-[11px] font-bold text-blue-700 uppercase">New Cases</span>
           <p className="text-2xl font-black text-blue-700 mt-1">{stats.newCases}</p>
-          <span className="text-[10px] text-[#53677D]">Pending review</span>
+          <span className="text-[10px] text-[#53677D]">Freshly allocated</span>
         </div>
 
         <div className="bg-white rounded-xl border border-[#D6E4F0] p-4 shadow-sm">
@@ -193,21 +193,21 @@ export const OfficerDashboardPage: React.FC = () => {
         </div>
 
         <div className="bg-white rounded-xl border border-[#D6E4F0] p-4 shadow-sm">
-          <span className="text-[11px] font-bold text-purple-700 uppercase">Awaiting Info</span>
+          <span className="text-[11px] font-bold text-purple-700 uppercase">Awaiting Action</span>
           <p className="text-2xl font-black text-purple-700 mt-1">{stats.awaiting}</p>
-          <span className="text-[10px] text-[#53677D]">Query sent to student</span>
+          <span className="text-[10px] text-[#53677D]">Clarification sought</span>
         </div>
 
         <div className="bg-white rounded-xl border border-[#D6E4F0] p-4 shadow-sm">
-          <span className="text-[11px] font-bold text-red-700 uppercase">Overdue SLA</span>
+          <span className="text-[11px] font-bold text-red-700 uppercase">Overdue Cases</span>
           <p className="text-2xl font-black text-red-600 mt-1">{stats.overdue}</p>
-          <span className="text-[10px] text-[#53677D]">Past statutory date</span>
+          <span className="text-[10px] text-[#53677D]">Statutory SLA breached</span>
         </div>
 
         <div className="bg-white rounded-xl border border-[#D6E4F0] p-4 shadow-sm">
-          <span className="text-[11px] font-bold text-emerald-700 uppercase">Resolved</span>
+          <span className="text-[11px] font-bold text-emerald-700 uppercase">Resolved Cases</span>
           <p className="text-2xl font-black text-emerald-600 mt-1">{stats.resolved}</p>
-          <span className="text-[10px] text-[#53677D]">Closed / settled</span>
+          <span className="text-[10px] text-[#53677D]">Closure recommended</span>
         </div>
       </div>
 
