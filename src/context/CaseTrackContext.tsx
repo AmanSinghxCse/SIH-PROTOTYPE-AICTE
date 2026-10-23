@@ -73,6 +73,14 @@ interface CaseTrackContextType {
   requestComplainantInfo: (id: string, query: string) => boolean;
   assignComplaint: (id: string, bureauId: string, officerId: string, notes?: string) => boolean;
   editComplaint: (id: string, updates: Partial<Complaint>) => boolean;
+  reassignComplaint: (id: string, newBureauId: string, newOfficerId: string, reason: string) => boolean;
+  reopenComplaint: (id: string, reason: string) => boolean;
+  recommendResolution: (id: string, recommendation: string) => boolean;
+  requestInstitutionResponse: (id: string, queryReason: string) => boolean;
+  recordInstitutionResponse: (id: string, remarks: string) => boolean;
+  updateComplaintDeadline: (id: string, newDeadline: string, reason: string) => boolean;
+  users: User[];
+  addUser: (newUser: User) => boolean;
   addNote: (complaintId: string, content: string, actionItem?: string, isOfficialAction?: boolean) => boolean;
   confirmRelationship: (suggestionId: string, reviewNotes?: string) => boolean;
   rejectRelationship: (suggestionId: string, reviewNotes?: string) => boolean;
@@ -175,6 +183,12 @@ export const CaseTrackProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   // Lifecycle Stages
   const [lifecycleStages] = useState<LifecycleStage[]>(INITIAL_LIFECYCLE_STAGES);
+
+  // Users for Administration Staff Management
+  const [users, setUsers] = useState<User[]>(() => {
+    const saved = localStorage.getItem(`${STORAGE_KEY_PREFIX}users`);
+    return saved ? JSON.parse(saved) : INITIAL_USERS;
+  });
 
   // Persist to local storage
   useEffect(() => {
@@ -782,6 +796,362 @@ export const CaseTrackProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   };
 
   // Edit permitted fields
+  // Reassign Complaint with structured history
+  const reassignComplaint = (id: string, newBureauId: string, newOfficerId: string, reason: string): boolean => {
+    if (!hasPermission('assign_case')) {
+      addAuditLogEntry({
+        action: 'Access Denied: Case Reassignment',
+        entityType: 'Assignment',
+        entityId: id,
+        details: `Unauthorized attempt to reassign bureau by user ${currentUser.name} (${currentUser.role}).`
+      });
+      return false;
+    }
+
+    const target = complaints.find(c => c.id === id);
+    if (!target) return false;
+
+    const bureau = bureaus.find(b => b.id === newBureauId) || bureaus[0];
+    const prevBureau = target.bureauName;
+    const prevOfficer = target.assignedOfficerName;
+    const targetOfficer = users.find(u => u.id === newOfficerId);
+    const officerName = targetOfficer ? targetOfficer.name : bureau.officerInCharge;
+    const today = '2026-10-23';
+
+    const historyRecord = {
+      id: `AH-${Date.now().toString().slice(-6)}`,
+      previousBureauId: target.bureauId,
+      newBureauId,
+      previousOfficerId: target.assignedOfficerId,
+      newOfficerId,
+      reason,
+      assignedAt: today,
+      assignedBy: currentUser.name
+    };
+
+    setComplaints(prev =>
+      prev.map(c => {
+        if (c.id === id) {
+          return {
+            ...c,
+            bureauId: newBureauId,
+            bureauName: bureau.name,
+            assignedOfficerId: newOfficerId,
+            assignedOfficerName: officerName,
+            lastUpdatedDate: today,
+            currentStageId: 4,
+            assignmentHistory: [...(c.assignmentHistory || []), historyRecord]
+          };
+        }
+        return c;
+      })
+    );
+
+    const reassignEvent: TimelineEvent = {
+      id: `EVT-${id}-REASSIGN-${Date.now().toString().slice(-4)}`,
+      complaintId: id,
+      timestamp: new Date().toISOString(),
+      type: 'REASSIGNED',
+      title: `Reallocated to ${bureau.shortName} (${officerName})`,
+      description: `Reason: ${reason}`,
+      actorName: currentUser.name,
+      actorRole: currentUser.role.toUpperCase()
+    };
+
+    setTimelineEvents(prev => ({
+      ...prev,
+      [id]: [...(prev[id] || []), reassignEvent]
+    }));
+
+    addAuditLogEntry({
+      action: 'Case Reassigned',
+      entityType: 'Assignment',
+      entityId: id,
+      details: `Reassigned from ${prevBureau} (${prevOfficer}) to ${bureau.name} (${officerName}). Reason: ${reason}`,
+      previousValue: `${prevBureau} / ${prevOfficer}`,
+      newValue: `${bureau.name} / ${officerName}`
+    });
+
+    return true;
+  };
+
+  // Reopen Complaint
+  const reopenComplaint = (id: string, reason: string): boolean => {
+    if (!hasPermission('approve_closure')) {
+      addAuditLogEntry({
+        action: 'Access Denied: Reopen Complaint',
+        entityType: 'Status',
+        entityId: id,
+        details: `Unauthorized attempt to reopen complaint by user ${currentUser.name} (${currentUser.role}).`
+      });
+      return false;
+    }
+
+    const today = '2026-10-23';
+    setComplaints(prev =>
+      prev.map(c => {
+        if (c.id === id) {
+          return {
+            ...c,
+            status: 'Under Review',
+            isReopened: true,
+            reopenedDate: today,
+            reopenedReason: reason,
+            reopenedBy: currentUser.name,
+            currentStageId: 5,
+            lastUpdatedDate: today
+          };
+        }
+        return c;
+      })
+    );
+
+    const reopenEvent: TimelineEvent = {
+      id: `EVT-${id}-REOPEN-${Date.now().toString().slice(-4)}`,
+      complaintId: id,
+      timestamp: new Date().toISOString(),
+      type: 'REOPENED',
+      title: 'Complaint Formally Reopened',
+      description: `Case reopened for active investigation by ${currentUser.name}. Reason: ${reason}`,
+      actorName: currentUser.name,
+      actorRole: currentUser.role.toUpperCase()
+    };
+
+    setTimelineEvents(prev => ({
+      ...prev,
+      [id]: [...(prev[id] || []), reopenEvent]
+    }));
+
+    addAuditLogEntry({
+      action: 'Complaint Reopened',
+      entityType: 'Status',
+      entityId: id,
+      details: `Complaint reopened by ${currentUser.name}. Reason: ${reason}`,
+      previousValue: 'Closed',
+      newValue: 'Under Review'
+    });
+
+    return true;
+  };
+
+  // Recommend Resolution
+  const recommendResolution = (id: string, recommendation: string): boolean => {
+    const today = '2026-10-23';
+    setComplaints(prev =>
+      prev.map(c => {
+        if (c.id === id) {
+          return {
+            ...c,
+            status: 'Resolution Recommended',
+            resolutionRecommendation: recommendation,
+            resolutionRecommendedBy: currentUser.name,
+            resolutionRecommendedDate: today,
+            currentStageId: 8,
+            lastUpdatedDate: today
+          };
+        }
+        return c;
+      })
+    );
+
+    const recEvent: TimelineEvent = {
+      id: `EVT-${id}-RECRES-${Date.now().toString().slice(-4)}`,
+      complaintId: id,
+      timestamp: new Date().toISOString(),
+      type: 'RESOLUTION_RECOMMENDED',
+      title: 'Resolution Recommended by Inquiry Officer',
+      description: recommendation,
+      actorName: currentUser.name,
+      actorRole: currentUser.role.toUpperCase()
+    };
+
+    setTimelineEvents(prev => ({
+      ...prev,
+      [id]: [...(prev[id] || []), recEvent]
+    }));
+
+    addAuditLogEntry({
+      action: 'Resolution Recommended',
+      entityType: 'Status',
+      entityId: id,
+      details: `Resolution recommendation submitted by ${currentUser.name}: ${recommendation}`,
+      newValue: 'Resolution Recommended'
+    });
+
+    return true;
+  };
+
+  // Request Institution Response
+  const requestInstitutionResponse = (id: string, queryReason: string): boolean => {
+    const today = '2026-10-23';
+    setComplaints(prev =>
+      prev.map(c => {
+        if (c.id === id) {
+          return {
+            ...c,
+            status: 'Awaiting Institution Response',
+            institutionResponseRequested: true,
+            currentStageId: 6,
+            lastUpdatedDate: today
+          };
+        }
+        return c;
+      })
+    );
+
+    const inquiryEvent: TimelineEvent = {
+      id: `EVT-${id}-INSTREQ-${Date.now().toString().slice(-4)}`,
+      complaintId: id,
+      timestamp: new Date().toISOString(),
+      type: 'INSTITUTION_INQUIRY',
+      title: 'Formal Explanation Called from Institution',
+      description: queryReason,
+      actorName: currentUser.name,
+      actorRole: currentUser.role.toUpperCase()
+    };
+
+    setTimelineEvents(prev => ({
+      ...prev,
+      [id]: [...(prev[id] || []), inquiryEvent]
+    }));
+
+    addAuditLogEntry({
+      action: 'Institution Explanation Demanded',
+      entityType: 'Status',
+      entityId: id,
+      details: `Formal explanation called from institution by ${currentUser.name}: ${queryReason}`,
+      newValue: 'Awaiting Institution Response'
+    });
+
+    return true;
+  };
+
+  // Record Institution Response
+  const recordInstitutionResponse = (id: string, remarks: string): boolean => {
+    const today = '2026-10-23';
+    setComplaints(prev =>
+      prev.map(c => {
+        if (c.id === id) {
+          return {
+            ...c,
+            status: 'Action & Investigation',
+            institutionResponseReceived: true,
+            institutionResponseDate: today,
+            institutionRemarks: remarks,
+            currentStageId: 7,
+            lastUpdatedDate: today
+          };
+        }
+        return c;
+      })
+    );
+
+    const replyEvent: TimelineEvent = {
+      id: `EVT-${id}-INSTREP-${Date.now().toString().slice(-4)}`,
+      complaintId: id,
+      timestamp: new Date().toISOString(),
+      type: 'INSTITUTION_REPLIED',
+      title: 'Institution Response Received & Logged',
+      description: remarks,
+      actorName: currentUser.name,
+      actorRole: currentUser.role.toUpperCase()
+    };
+
+    setTimelineEvents(prev => ({
+      ...prev,
+      [id]: [...(prev[id] || []), replyEvent]
+    }));
+
+    addAuditLogEntry({
+      action: 'Institution Response Recorded',
+      entityType: 'Status',
+      entityId: id,
+      details: `Institution response recorded by ${currentUser.name}: ${remarks}`,
+      newValue: 'Action & Investigation'
+    });
+
+    return true;
+  };
+
+  // Update Complaint Deadline with tracking
+  const updateComplaintDeadline = (id: string, newDeadline: string, reason: string): boolean => {
+    const target = complaints.find(c => c.id === id);
+    if (!target) return false;
+
+    const oldDeadline = target.deadlineDate;
+    const today = '2026-10-23';
+
+    const deadlineRecord = {
+      id: `DL-${Date.now().toString().slice(-6)}`,
+      previousDeadline: oldDeadline,
+      newDeadline,
+      reason,
+      changedAt: today,
+      changedBy: currentUser.name
+    };
+
+    setComplaints(prev =>
+      prev.map(c => {
+        if (c.id === id) {
+          return {
+            ...c,
+            deadlineDate: newDeadline,
+            lastUpdatedDate: today,
+            deadlineHistory: [...(c.deadlineHistory || []), deadlineRecord]
+          };
+        }
+        return c;
+      })
+    );
+
+    const dlEvent: TimelineEvent = {
+      id: `EVT-${id}-DL-${Date.now().toString().slice(-4)}`,
+      complaintId: id,
+      timestamp: new Date().toISOString(),
+      type: 'DEADLINE_UPDATED',
+      title: `Configured Deadline Extended to ${newDeadline}`,
+      description: `Reason: ${reason}`,
+      actorName: currentUser.name,
+      actorRole: currentUser.role.toUpperCase()
+    };
+
+    setTimelineEvents(prev => ({
+      ...prev,
+      [id]: [...(prev[id] || []), dlEvent]
+    }));
+
+    addAuditLogEntry({
+      action: 'Deadline Modified',
+      entityType: 'Complaint',
+      entityId: id,
+      details: `Deadline altered from ${oldDeadline} to ${newDeadline}. Reason: ${reason}`,
+      previousValue: oldDeadline,
+      newValue: newDeadline
+    });
+
+    return true;
+  };
+
+  // Add User (Admin Staff Management)
+  const addUser = (newUser: User): boolean => {
+    if (currentUser.role !== 'admin') return false;
+    setUsers(prev => {
+      const updated = [...prev, newUser];
+      localStorage.setItem(`${STORAGE_KEY_PREFIX}users`, JSON.stringify(updated));
+      return updated;
+    });
+
+    addAuditLogEntry({
+      action: 'Staff User Account Created',
+      entityType: 'SystemSettings',
+      entityId: newUser.id,
+      details: `Admin ${currentUser.name} provisioned new staff account ${newUser.name} (${newUser.email}) with role ${newUser.role.toUpperCase()}`,
+      newValue: newUser.role
+    });
+
+    return true;
+  };
+
   const editComplaint = (id: string, updates: Partial<Complaint>): boolean => {
     if (!hasPermission('edit_case')) {
       addAuditLogEntry({
@@ -1074,6 +1444,14 @@ export const CaseTrackProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         approveCaseClosure,
         requestComplainantInfo,
         assignComplaint,
+        reassignComplaint,
+        reopenComplaint,
+        recommendResolution,
+        requestInstitutionResponse,
+        recordInstitutionResponse,
+        updateComplaintDeadline,
+        users,
+        addUser,
         editComplaint,
         addNote,
         confirmRelationship,

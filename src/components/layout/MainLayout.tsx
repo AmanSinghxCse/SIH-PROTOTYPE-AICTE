@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Outlet, Link } from 'react-router-dom';
 import { Navbar } from './Navbar';
 import { GuidedTourModal } from '../guidedTour/GuidedTourModal';
+import { CMISAIAssistant } from '../ai/CMISAIAssistant';
 import { ShieldCheck, ExternalLink, HelpCircle, Phone, Mail, Award, CheckCircle2 } from 'lucide-react';
 
 export const MainLayout: React.FC = () => {
@@ -16,6 +17,9 @@ export const MainLayout: React.FC = () => {
       <main className="flex-1 w-full portal-container py-6 sm:py-8 animate-fadeInUp">
         <Outlet />
       </main>
+
+      {/* Floating Role-Aware CMIS AI Assistant */}
+      <CMISAIAssistant />
 
       {/* Professional Indian Government Portal Footer */}
       <footer className="bg-[#064578] text-white border-t-4 border-amber-400 mt-auto">

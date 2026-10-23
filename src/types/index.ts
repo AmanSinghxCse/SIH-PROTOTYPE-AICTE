@@ -26,11 +26,16 @@ export type ComplaintStatus =
   | 'Open'
   | 'Under Review'
   | 'Awaiting Information'
+  | 'Awaiting Institution Response'
+  | 'Action & Investigation'
+  | 'Resolution Recommended'
+  | 'Awaiting Closure Review'
   | 'Escalated'
   | 'Resolved'
-  | 'Closed';
+  | 'Closed'
+  | 'Reopened';
 
-export type ComplaintPriority = 'Normal' | 'Medium' | 'High' | 'Urgent';
+export type ComplaintPriority = 'Low' | 'Medium' | 'High' | 'Critical' | 'Normal' | 'Urgent';
 
 export type ComplaintCategory =
   | 'Infrastructure & Labs'
@@ -70,6 +75,26 @@ export interface Bureau {
   defaultDeadlineDays: number;
 }
 
+export interface AssignmentHistoryRecord {
+  id: string;
+  previousBureauId?: string;
+  newBureauId: string;
+  previousOfficerId?: string;
+  newOfficerId: string;
+  reason: string;
+  assignedAt: string;
+  assignedBy: string;
+}
+
+export interface DeadlineHistoryRecord {
+  id: string;
+  previousDeadline: string;
+  newDeadline: string;
+  reason: string;
+  changedAt: string;
+  changedBy: string;
+}
+
 export interface Complaint {
   id: string;
   title: string;
@@ -93,7 +118,7 @@ export interface Complaint {
   resolutionSummary?: string;
   tags: string[];
   attachments?: Array<{ name: string; size: string; type: string }>;
-  currentStageId?: number; // 1 to 7 corresponding to Circular Lifecycle
+  currentStageId?: number; // 1 to 10 corresponding to Complaint Lifecycle
   complainantName?: string;
   complainantEmail?: string;
   complainantPhone?: string;
@@ -101,6 +126,22 @@ export interface Complaint {
   verificationRemarks?: string;
   closureApprovedBy?: string;
   closureApprovedAt?: string;
+  // Extended Tracking Fields for SIH Advanced CMIS
+  isReopened?: boolean;
+  reopenedDate?: string;
+  reopenedReason?: string;
+  reopenedBy?: string;
+  resolutionRecommendedBy?: string;
+  resolutionRecommendation?: string;
+  resolutionRecommendedDate?: string;
+  closureReviewRequestedAt?: string;
+  institutionResponseRequested?: boolean;
+  institutionResponseReceived?: boolean;
+  institutionResponseDate?: string;
+  institutionRemarks?: string;
+  assignmentHistory?: AssignmentHistoryRecord[];
+  deadlineHistory?: DeadlineHistoryRecord[];
+  findings?: string;
 }
 
 export interface TimelineEvent {
@@ -109,12 +150,21 @@ export interface TimelineEvent {
   timestamp: string;
   type:
     | 'REGISTERED'
+    | 'VERIFICATION_UPDATED'
     | 'ASSIGNED'
+    | 'REASSIGNED'
     | 'STATUS_CHANGED'
     | 'NOTE_ADDED'
+    | 'INSTITUTION_INQUIRY'
+    | 'INSTITUTION_REPLIED'
+    | 'DEADLINE_UPDATED'
     | 'DEADLINE_APPROACHING'
+    | 'RESOLUTION_RECOMMENDED'
+    | 'CLOSURE_REVIEW'
     | 'ESCALATED'
     | 'RESOLVED'
+    | 'CLOSED'
+    | 'REOPENED'
     | 'RELATIONSHIP_CONFIRMED'
     | 'RELATIONSHIP_REJECTED';
   title: string;
@@ -173,6 +223,18 @@ export interface SystemSettings {
   defaultDeadlineNormal: number;
 }
 
+export type MilestoneStatus = 'Completed' | 'In Progress' | 'Needs Verification' | 'Not Started';
+
+export interface ProjectMilestone {
+  id: number;
+  title: string;
+  ownerRole: string;
+  status: MilestoneStatus;
+  workCompleted: string;
+  nextAction: string;
+  lastUpdated: string;
+}
+
 export interface NotificationItem {
   id: string;
   type: 'approaching_deadline' | 'overdue' | 'new_assignment' | 'status_update' | 'related_suggestion';
@@ -196,15 +258,21 @@ export interface LifecycleStage {
   actionRequired: string;
 }
 
-// Project Development Tracker Milestone Model
-export type MilestoneStatus = 'Completed' | 'In Progress' | 'Needs Verification' | 'Not Started';
+// AI Assistant Types
+export interface AIMessage {
+  id: string;
+  sender: 'user' | 'assistant';
+  text: string;
+  timestamp: string;
+  isDraft?: boolean;
+  draftType?: 'progress_update' | 'clarification_request' | 'resolution_summary';
+  relatedComplaintId?: string;
+  contextSources?: string[];
+}
 
-export interface ProjectMilestone {
-  id: number;
-  title: string;
-  ownerRole: string;
-  workCompleted: string;
-  nextAction: string;
-  status: MilestoneStatus;
-  lastUpdated: string;
+export interface SuggestedPrompt {
+  id: string;
+  label: string;
+  prompt: string;
+  category: 'general' | 'case_inquiry' | 'analytics' | 'drafting';
 }

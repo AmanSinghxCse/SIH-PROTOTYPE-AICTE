@@ -6,6 +6,7 @@ import { formatDate, formatDateTime, getCaseAgeInDays, isApproachingDeadline, is
 import { UpdateStatusModal } from '../components/modals/UpdateStatusModal';
 import { AssignCaseModal } from '../components/modals/AssignCaseModal';
 import { AddNoteModal } from '../components/modals/AddNoteModal';
+import { ComplaintLifecycleTracker } from '../components/workflow/ComplaintLifecycleTracker';
 import {
   ArrowLeft,
   Building2,
@@ -201,6 +202,21 @@ export const CaseDetailPage: React.FC = () => {
             </div>
           </div>
         )}
+      </div>
+
+      {/* Statutory 10-Stage Complaint Lifecycle Tracker */}
+      <div className="bg-white rounded-xl shadow-xs border border-slate-200 p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
+              Statutory Complaint Lifecycle (10 Stages)
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Interactive progression workflow. Click any stage to inspect regulatory requirements and milestone entry/exit dates.
+            </p>
+          </div>
+        </div>
+        <ComplaintLifecycleTracker complaint={complaint} isPublic={currentUser.role === 'public'} showTimeline={false} />
       </div>
 
       {/* Tabs Navigation */}

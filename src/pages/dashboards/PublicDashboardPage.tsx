@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useCaseTrack } from '../../context/CaseTrackContext';
+import { ComplaintLifecycleTracker } from '../../components/workflow/ComplaintLifecycleTracker';
 import {
   FileText,
   Clock,
@@ -344,63 +345,12 @@ export const PublicDashboardPage: React.FC = () => {
                   </p>
                 </div>
 
-                {/* Public Milestones Tracker */}
+                {/* Interactive Statutory 10-Stage Lifecycle Workflow */}
                 <div>
-                  <h4 className="text-xs font-bold text-[#17324D] uppercase tracking-wider mb-3">
-                    Progress Milestones
+                  <h4 className="text-xs font-bold text-[#17324D] uppercase tracking-wider mb-2">
+                    Official 10-Stage Progression
                   </h4>
-
-                  <div className="space-y-3 relative pl-4 border-l-2 border-[#D6E4F0]">
-                    <div className="relative">
-                      <div className="absolute -left-[21px] top-0.5 w-3 h-3 rounded-full bg-emerald-600 border-2 border-white ring-2 ring-emerald-100" />
-                      <p className="text-xs font-bold text-[#17324D]">1. Intake & Registration</p>
-                      <p className="text-[11px] text-[#53677D]">
-                        Docket generated on {trackedCase.submissionDate}
-                      </p>
-                    </div>
-
-                    <div className="relative">
-                      <div className={`absolute -left-[21px] top-0.5 w-3 h-3 rounded-full border-2 border-white ${
-                        (trackedCase.currentStageId || 2) >= 2 ? 'bg-emerald-600 ring-2 ring-emerald-100' : 'bg-gray-300'
-                      }`} />
-                      <p className="text-xs font-bold text-[#17324D]">2. Scrutiny & Validation</p>
-                      <p className="text-[11px] text-[#53677D]">
-                        Status: {trackedCase.verificationStatus || 'Verified'}
-                      </p>
-                    </div>
-
-                    <div className="relative">
-                      <div className={`absolute -left-[21px] top-0.5 w-3 h-3 rounded-full border-2 border-white ${
-                        (trackedCase.currentStageId || 2) >= 3 ? 'bg-emerald-600 ring-2 ring-emerald-100' : 'bg-gray-300'
-                      }`} />
-                      <p className="text-xs font-bold text-[#17324D]">3. Cell Assignment</p>
-                      <p className="text-[11px] text-[#53677D]">
-                        Allocated to {trackedCase.bureauName}
-                      </p>
-                    </div>
-
-                    <div className="relative">
-                      <div className={`absolute -left-[21px] top-0.5 w-3 h-3 rounded-full border-2 border-white ${
-                        (trackedCase.currentStageId || 2) >= 4 ? 'bg-[#0B477F] ring-2 ring-blue-100' : 'bg-gray-300'
-                      }`} />
-                      <p className="text-xs font-bold text-[#17324D]">4. Inquiry & Explanation</p>
-                      <p className="text-[11px] text-[#53677D]">
-                        Formal response called from institution
-                      </p>
-                    </div>
-
-                    <div className="relative">
-                      <div className={`absolute -left-[21px] top-0.5 w-3 h-3 rounded-full border-2 border-white ${
-                        trackedCase.status === 'Resolved' || trackedCase.status === 'Closed'
-                          ? 'bg-emerald-600 ring-2 ring-emerald-100'
-                          : 'bg-gray-300'
-                      }`} />
-                      <p className="text-xs font-bold text-[#17324D]">5. Final Resolution & Closure</p>
-                      <p className="text-[11px] text-[#53677D]">
-                        {trackedCase.resolvedDate ? `Resolved on ${trackedCase.resolvedDate}` : 'Pending final review'}
-                      </p>
-                    </div>
-                  </div>
+                  <ComplaintLifecycleTracker complaint={trackedCase} isPublic={true} showTimeline={false} />
                 </div>
 
                 {/* Privacy note */}

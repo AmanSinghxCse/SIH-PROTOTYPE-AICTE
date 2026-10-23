@@ -41,12 +41,14 @@ export const RegistryPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterBureau, setFilterBureau] = useState('ALL');
   const [filterStatus, setFilterStatus] = useState('ALL');
+  const [filterCategory, setFilterCategory] = useState('ALL');
   const [filterPriority, setFilterPriority] = useState('ALL');
+  const [specialFilter, setSpecialFilter] = useState<string>('ALL');
   const [onlyOverdue, setOnlyOverdue] = useState(false);
   const [onlyApproaching, setOnlyApproaching] = useState(false);
 
   // Sorting
-  const [sortField, setSortField] = useState<'id' | 'submissionDate' | 'deadlineDate' | 'status' | 'institutionName'>('submissionDate');
+  const [sortField, setSortField] = useState<'id' | 'submissionDate' | 'deadlineDate' | 'status' | 'institutionName' | 'priority'>('submissionDate');
   const [sortAsc, setSortAsc] = useState(false);
 
   // Pagination
@@ -61,11 +63,15 @@ export const RegistryPage: React.FC = () => {
   // Read URL query params on load (e.g. from Dashboard click)
   useEffect(() => {
     const statusParam = searchParams.get('status');
+    const filterParam = searchParams.get('filter');
     const overdueParam = searchParams.get('overdue');
     const approachingParam = searchParams.get('approaching');
 
     if (statusParam !== null) {
       setFilterStatus(statusParam);
+    }
+    if (filterParam !== null) {
+      setSpecialFilter(filterParam);
     }
     setOnlyOverdue(overdueParam === 'true');
     setOnlyApproaching(approachingParam === 'true');
@@ -88,11 +94,33 @@ export const RegistryPage: React.FC = () => {
         if (!matches) return false;
       }
 
+      // Special Filter from Dashboard Cards
+      if (specialFilter === 'unassigned') {
+        if (c.bureauId && c.assignedOfficerId) return false;
+      } else if (specialFilter === 'assigned') {
+        if (!c.bureauId || !c.assignedOfficerId) return false;
+      } else if (specialFilter === 'awaiting_verification') {
+        if (c.verificationStatus === 'Verified') return false;
+      } else if (specialFilter === 'institution_response') {
+        if (c.status !== 'Awaiting Institution Response' && !c.institutionResponseRequested) return false;
+      } else if (specialFilter === 'action') {
+        if (c.status !== 'Action & Investigation' && c.status !== 'Escalated') return false;
+      } else if (specialFilter === 'resolution_recommended') {
+        if (c.status !== 'Resolution Recommended') return false;
+      } else if (specialFilter === 'closure_review') {
+        if (c.status !== 'Awaiting Closure Review' && c.status !== 'Resolved') return false;
+      } else if (specialFilter === 'reopened') {
+        if (!c.isReopened && c.status !== 'Reopened') return false;
+      }
+
       // Bureau
       if (filterBureau !== 'ALL' && c.bureauId !== filterBureau) return false;
 
       // Status
       if (filterStatus !== 'ALL' && c.status !== filterStatus) return false;
+
+      // Category
+      if (filterCategory !== 'ALL' && c.category !== filterCategory) return false;
 
       // Priority
       if (filterPriority !== 'ALL' && c.priority !== filterPriority) return false;
@@ -107,7 +135,7 @@ export const RegistryPage: React.FC = () => {
 
       return true;
     });
-  }, [complaints, searchTerm, filterBureau, filterStatus, filterPriority, onlyOverdue, onlyApproaching, settings]);
+  }, [complaints, searchTerm, filterBureau, filterStatus, filterCategory, filterPriority, specialFilter, onlyOverdue, onlyApproaching, settings]);
 
   // Sort complaints
   const sorted = useMemo(() => {
@@ -231,7 +259,7 @@ export const RegistryPage: React.FC = () => {
 
       {/* Filter & Search Bar */}
       <div className="p-4 bg-white rounded-xl shadow-xs border border-slate-200 space-y-3">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
           {/* Text Search */}
           <div className="md:col-span-2 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -264,6 +292,26 @@ export const RegistryPage: React.FC = () => {
             </select>
           </div>
 
+          {/* Category Filter */}
+          <div>
+            <select
+              value={filterCategory}
+              onChange={e => {
+                setFilterCategory(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="w-full text-xs bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 focus:bg-white focus:outline-none"
+            >
+              <option value="ALL">All Categories</option>
+              <option value="Infrastructure & Labs">Infrastructure & Labs</option>
+              <option value="Academic Administration & Faculty">Academic Administration</option>
+              <option value="Fee Irregularity & Caution Refund">Fee Irregularity</option>
+              <option value="Examination Malpractice & Results">Examinations</option>
+              <option value="Harassment & Anti-Ragging">Harassment / Anti-Ragging</option>
+              <option value="Regulatory Compliance & Fraud">Regulatory & Compliance</option>
+            </select>
+          </div>
+
           {/* Status Filter */}
           <div>
             <select
@@ -278,12 +326,29 @@ export const RegistryPage: React.FC = () => {
               <option value="Open">Open</option>
               <option value="Under Review">Under Review</option>
               <option value="Awaiting Information">Awaiting Information</option>
+              <option value="Awaiting Institution Response">Awaiting Institution Response</option>
+              <option value="Action & Investigation">Action & Investigation</option>
+              <option value="Resolution Recommended">Resolution Recommended</option>
+              <option value="Awaiting Closure Review">Awaiting Closure Review</option>
               <option value="Escalated">Escalated</option>
               <option value="Resolved">Resolved</option>
               <option value="Closed">Closed</option>
             </select>
           </div>
         </div>
+
+        {/* Priority Filter & Quick State Pills */}
+        {specialFilter !== 'ALL' && (
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-[#E5F1FC] border border-[#D6E4F0] rounded-lg text-xs text-[#0B477F]">
+            <span>Active Dashboard Filter: <strong>{specialFilter.replace(/_/g, ' ').toUpperCase()}</strong></span>
+            <button
+              onClick={() => setSpecialFilter('ALL')}
+              className="text-xs font-bold hover:underline ml-auto"
+            >
+              Clear Filter
+            </button>
+          </div>
+        )}
 
         {/* Secondary Toggles & Clear Filters */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100 text-xs">

@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useCaseTrack } from '../../context/CaseTrackContext';
 import { INITIAL_USERS } from '../../data/seedData';
 import { getCaseAgeInDays } from '../../utils/dateUtils';
@@ -25,7 +25,8 @@ import {
   ShieldAlert,
   Lightbulb,
   Building,
-  FileText
+  FileText,
+  UserPlus
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -42,6 +43,7 @@ import {
 } from 'recharts';
 
 export const AdminDashboardPage: React.FC = () => {
+  const navigate = useNavigate();
   const {
     currentUser,
     complaints,
@@ -50,10 +52,22 @@ export const AdminDashboardPage: React.FC = () => {
     assignComplaint,
     updateVerificationStatus,
     approveCaseClosure,
+    reassignComplaint,
+    reopenComplaint,
+    users,
+    addUser,
     auditLogs
   } = useCaseTrack();
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'verification' | 'supervision' | 'analytics'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'verification' | 'supervision' | 'analytics' | 'users'>('overview');
+
+  // Staff User Management State
+  const [newUserName, setNewUserName] = useState('');
+  const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserRole, setNewUserRole] = useState<'admin' | 'bureau_officer'>('bureau_officer');
+  const [newUserDesignation, setNewUserDesignation] = useState('Assistant Director (Grievance)');
+  const [newUserBureau, setNewUserBureau] = useState(bureaus[0]?.id || 'BUR-GRV');
+  const [userCreatedMsg, setUserCreatedMsg] = useState(false);
 
   // Allocation Modal State
   const [allocationModalOpen, setAllocationModalOpen] = useState(false);
@@ -81,15 +95,43 @@ export const AdminDashboardPage: React.FC = () => {
   // 1. Summary Cards (Total, Unassigned, Open, Overdue, Resolved)
   const stats = useMemo(() => {
     const total = complaints.length;
-    const unassigned = complaints.filter(c => !c.bureauId || !c.assignedOfficerId).length;
-    const open = complaints.filter(c => c.status === 'Open' || c.status === 'Under Review' || c.status === 'Awaiting Information').length;
+    const newlyRegistered = complaints.filter(c => c.status === 'Open').length;
+    const awaitingVerification = complaints.filter(
+      c => !c.verificationStatus || c.verificationStatus === 'Pending' || c.verificationStatus === 'Needs Information'
+    ).length;
+    const awaitingAssignment = complaints.filter(c => !c.bureauId || !c.assignedOfficerId).length;
+    const assigned = complaints.filter(c => Boolean(c.bureauId && c.assignedOfficerId)).length;
+    const underReview = complaints.filter(c => c.status === 'Under Review').length;
+    const awaitingInstitutionResponse = complaints.filter(
+      c => c.status === 'Awaiting Institution Response' || c.institutionResponseRequested
+    ).length;
+    const awaitingAction = complaints.filter(c => c.status === 'Action & Investigation' || c.status === 'Escalated').length;
     const overdue = complaints.filter(c => {
       if (c.status === 'Resolved' || c.status === 'Closed') return false;
       return c.deadlineDate && c.deadlineDate < today;
     }).length;
-    const resolved = complaints.filter(c => c.status === 'Resolved' || c.status === 'Closed').length;
+    const resolutionRecommended = complaints.filter(c => c.status === 'Resolution Recommended').length;
+    const awaitingClosureReview = complaints.filter(
+      c => c.status === 'Awaiting Closure Review' || (c.status === 'Resolved' && !c.closureApprovedBy)
+    ).length;
+    const closed = complaints.filter(c => c.status === 'Closed').length;
+    const reopened = complaints.filter(c => c.isReopened || c.status === 'Reopened').length;
 
-    return { total, unassigned, open, overdue, resolved };
+    return {
+      total,
+      newlyRegistered,
+      awaitingVerification,
+      awaitingAssignment,
+      assigned,
+      underReview,
+      awaitingInstitutionResponse,
+      awaitingAction,
+      overdue,
+      resolutionRecommended,
+      awaitingClosureReview,
+      closed,
+      reopened
+    };
   }, [complaints, today]);
 
   // Bureau workload breakdown
@@ -216,6 +258,28 @@ export const AdminDashboardPage: React.FC = () => {
   }, [complaints]);
 
   // Handlers
+  const handleCreateUser = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newUserName.trim() || !newUserEmail.trim()) return;
+
+    const b = bureaus.find(b => b.id === newUserBureau) || bureaus[0];
+    const newUser = {
+      id: `USR-${Date.now().toString().slice(-4)}`,
+      name: newUserName.trim(),
+      email: newUserEmail.trim(),
+      role: newUserRole,
+      designation: newUserDesignation.trim(),
+      bureauId: b.id,
+      bureauName: b.name
+    };
+
+    addUser(newUser);
+    setUserCreatedMsg(true);
+    setNewUserName('');
+    setNewUserEmail('');
+    setTimeout(() => setUserCreatedMsg(false), 3000);
+  };
+
   const handleAssign = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedComplaintId) return;
@@ -329,55 +393,54 @@ export const AdminDashboardPage: React.FC = () => {
         </div>
       </div>
 
-      {/* 5 Summary KPI Cards as specified */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        <div className="bg-white rounded-xl border border-[#D6E4F0] p-4 shadow-sm">
-          <div className="flex items-center justify-between text-xs font-bold text-[#53677D] uppercase">
-            <span>Total Complaints</span>
-            <Inbox className="w-4 h-4 text-[#0B477F]" />
-          </div>
-          <p className="text-2xl font-black text-[#17324D] mt-2">{stats.total}</p>
-          <p className="text-[11px] text-[#53677D] mt-0.5">Across all bureaus</p>
+      {/* 13 Clickable KPI Cards Matching Section 2.1 */}
+      {complaints.length === 0 ? (
+        <div className="p-8 text-center bg-white rounded-xl border border-[#D6E4F0]">
+          <Inbox className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+          <h3 className="text-sm font-bold text-[#17324D]">No Complaint Records in Registry</h3>
+          <p className="text-xs text-[#53677D] mt-1">Submit a complaint via the Public Portal or reset sample data.</p>
         </div>
-
-        <div className="bg-white rounded-xl border border-[#D6E4F0] p-4 shadow-sm">
-          <div className="flex items-center justify-between text-xs font-bold text-amber-700 uppercase">
-            <span>Unassigned</span>
-            <AlertTriangle className="w-4 h-4 text-amber-600" />
-          </div>
-          <p className="text-2xl font-black text-amber-600 mt-2">{stats.unassigned}</p>
-          <p className="text-[11px] text-[#53677D] mt-0.5">Awaiting bureau allocation</p>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3.5">
+          {[
+            { label: 'Total Complaints', count: stats.total, sub: 'All council records', link: '/registry', icon: Inbox, color: 'text-[#0B477F]', bg: 'bg-[#E5F1FC]' },
+            { label: 'Newly Registered', count: stats.newlyRegistered, sub: 'Intake Stage 1', link: '/registry?status=Open', icon: Clock, color: 'text-blue-600', bg: 'bg-blue-50' },
+            { label: 'Awaiting Verification', count: stats.awaitingVerification, sub: 'Scrutiny Stage 2', link: '/registry?filter=awaiting_verification', icon: FileCheck2, color: 'text-amber-600', bg: 'bg-amber-50' },
+            { label: 'Awaiting Assignment', count: stats.awaitingAssignment, sub: 'Allocation Stage 3', link: '/registry?filter=unassigned', icon: AlertTriangle, color: 'text-orange-600', bg: 'bg-orange-50' },
+            { label: 'Assigned Complaints', count: stats.assigned, sub: 'Active with Officer', link: '/registry?filter=assigned', icon: UserCheck, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+            { label: 'Under Review', count: stats.underReview, sub: 'Inquiry Stage 5', link: '/registry?status=Under%20Review', icon: Eye, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+            { label: 'Awaiting Inst. Response', count: stats.awaitingInstitutionResponse, sub: 'Notice Stage 6', link: '/registry?filter=institution_response', icon: Building, color: 'text-purple-600', bg: 'bg-purple-50' },
+            { label: 'Awaiting Admin Action', count: stats.awaitingAction, sub: 'Hearing & Committee', link: '/registry?filter=action', icon: ShieldAlert, color: 'text-rose-600', bg: 'bg-rose-50' },
+            { label: 'Overdue Complaints', count: stats.overdue, sub: 'SLA Exceeded', link: '/registry?overdue=true', icon: AlertTriangle, color: 'text-[#C43D3D]', bg: 'bg-rose-100' },
+            { label: 'Resolution Recommended', count: stats.resolutionRecommended, sub: 'Findings concluded', link: '/registry?filter=resolution_recommended', icon: CheckCircle2, color: 'text-teal-600', bg: 'bg-teal-50' },
+            { label: 'Awaiting Closure Review', count: stats.awaitingClosureReview, sub: 'Final Sanction', link: '/registry?filter=closure_review', icon: ShieldCheck, color: 'text-amber-700', bg: 'bg-amber-100' },
+            { label: 'Closed Complaints', count: stats.closed, sub: 'Disposed & archived', link: '/registry?status=Closed', icon: Check, color: 'text-slate-600', bg: 'bg-slate-100' },
+            { label: 'Reopened Complaints', count: stats.reopened, sub: 'Review mandated', link: '/registry?filter=reopened', icon: RotateCcw, color: 'text-amber-800', bg: 'bg-amber-100' }
+          ].map((kpi, idx) => {
+            const Icon = kpi.icon;
+            return (
+              <div
+                key={idx}
+                onClick={() => navigate(kpi.link)}
+                className="bg-white rounded-xl border border-[#D6E4F0] p-3.5 shadow-xs hover:border-[#0B477F] hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
+              >
+                <div className="flex items-center justify-between text-xs font-bold text-[#53677D]">
+                  <span className="line-clamp-1 group-hover:text-[#0B477F] transition-colors">{kpi.label}</span>
+                  <div className={`w-7 h-7 rounded-lg ${kpi.bg} flex items-center justify-center shrink-0`}>
+                    <Icon className={`w-3.5 h-3.5 ${kpi.color}`} />
+                  </div>
+                </div>
+                <div className="mt-2">
+                  <span className={`text-2xl font-black ${kpi.color}`}>{kpi.count}</span>
+                  <span className="text-[10px] text-[#53677D] block mt-0.5 line-clamp-1">{kpi.sub}</span>
+                </div>
+              </div>
+            );
+          })}
         </div>
+      )}
 
-        <div className="bg-white rounded-xl border border-[#D6E4F0] p-4 shadow-sm">
-          <div className="flex items-center justify-between text-xs font-bold text-blue-700 uppercase">
-            <span>Open Complaints</span>
-            <Clock className="w-4 h-4 text-blue-600" />
-          </div>
-          <p className="text-2xl font-black text-blue-600 mt-2">{stats.open}</p>
-          <p className="text-[11px] text-[#53677D] mt-0.5">Under inquiry & review</p>
-        </div>
-
-        <div className="bg-white rounded-xl border border-[#D6E4F0] p-4 shadow-sm">
-          <div className="flex items-center justify-between text-xs font-bold text-red-700 uppercase">
-            <span>Overdue Complaints</span>
-            <AlertTriangle className="w-4 h-4 text-red-600" />
-          </div>
-          <p className="text-2xl font-black text-red-600 mt-2">{stats.overdue}</p>
-          <p className="text-[11px] text-[#53677D] mt-0.5">Exceeded statutory SLA</p>
-        </div>
-
-        <div className="bg-white rounded-xl border border-[#D6E4F0] p-4 shadow-sm">
-          <div className="flex items-center justify-between text-xs font-bold text-emerald-700 uppercase">
-            <span>Resolved</span>
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-          </div>
-          <p className="text-2xl font-black text-emerald-600 mt-2">{stats.resolved}</p>
-          <p className="text-[11px] text-[#53677D] mt-0.5">Documented closure</p>
-        </div>
-      </div>
-
-      {/* Primary Administration Navigation Tabs (Consolidates Verification, Supervision, and Analytics) */}
+      {/* Primary Administration Navigation Tabs (Consolidates Verification, Supervision, Analytics & Users) */}
       <div className="border-b border-[#D6E4F0] flex flex-wrap gap-2">
         <button
           onClick={() => setActiveTab('overview')}
@@ -388,7 +451,7 @@ export const AdminDashboardPage: React.FC = () => {
           }`}
         >
           <Building2 className="w-4 h-4" />
-          <span>Bureau Workload & Operations</span>
+          <span>Bureau Workload & Allocation</span>
         </button>
 
         <button
@@ -425,6 +488,18 @@ export const AdminDashboardPage: React.FC = () => {
         >
           <BarChart3 className="w-4 h-4 text-teal-600" />
           <span>Executive Analytics & Reports</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('users')}
+          className={`px-4 py-2.5 text-xs font-bold rounded-t-lg transition-colors border-b-2 flex items-center gap-2 ${
+            activeTab === 'users'
+              ? 'border-[#0B477F] text-[#0B477F] bg-white shadow-xs'
+              : 'border-transparent text-[#53677D] hover:text-[#17324D]'
+          }`}
+        >
+          <Users className="w-4 h-4 text-blue-600" />
+          <span>Staff Accounts & Roles ({users.length})</span>
         </button>
       </div>
 
@@ -886,7 +961,7 @@ export const AdminDashboardPage: React.FC = () => {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#D6E4F0]">
+                <div className="grid grid-cols-3 gap-2 pt-2 border-t border-[#D6E4F0]">
                   <button
                     type="button"
                     onClick={() => handleClosureAction(true)}
@@ -903,6 +978,19 @@ export const AdminDashboardPage: React.FC = () => {
                   >
                     <RotateCcw className="w-4 h-4" />
                     <span>Remand Case</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      reopenComplaint(activeSupervisoryCase.id, supervisoryNotes || 'Reopened by administrative authority');
+                      setSupervisorySuccessMsg(`Case ${activeSupervisoryCase.id} successfully reopened.`);
+                      setTimeout(() => setSupervisorySuccessMsg(null), 3000);
+                    }}
+                    className="py-2.5 px-2 bg-purple-700 hover:bg-purple-800 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1 shadow-sm"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    <span>Reopen Case</span>
                   </button>
                 </div>
               </div>
@@ -1008,7 +1096,162 @@ export const AdminDashboardPage: React.FC = () => {
         </div>
       )}
 
-      {/* Fast Allocation Modal */}
+      {/* TAB 5: Staff Accounts & User Management */}
+      {activeTab === 'users' && (
+        <div className="space-y-6 animate-fadeIn">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#F1F7FC] p-4 rounded-xl border border-[#D6E4F0]">
+            <div>
+              <h3 className="text-sm font-bold text-[#17324D] flex items-center gap-2">
+                <Users className="w-4 h-4 text-[#0B477F]" />
+                <span>AICTE Staff Directory & Role Allocations</span>
+              </h3>
+              <p className="text-xs text-[#53677D] mt-0.5">
+                Manage council officer accounts, RBAC clearances, and bureau assignments without bypassing authentication.
+              </p>
+            </div>
+            <div className="text-xs font-semibold px-2.5 py-1 rounded bg-white text-[#0B477F] border border-[#D6E4F0]">
+              {users.length} Active Accounts
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Left 2 Cols: Staff Users Table */}
+            <div className="lg:col-span-2 bg-white rounded-xl border border-[#D6E4F0] p-5 shadow-xs">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-[#17324D] mb-3">
+                Authorized Personnel Directory
+              </h4>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-[#D6E4F0] text-[#53677D] font-bold">
+                      <th className="py-2.5 px-3">Officer Name</th>
+                      <th className="py-2.5 px-3">Portal Clearance</th>
+                      <th className="py-2.5 px-3">Assigned Bureau</th>
+                      <th className="py-2.5 px-3">Designation</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#D6E4F0]">
+                    {users.map((u) => (
+                      <tr key={u.id} className="hover:bg-slate-50/60">
+                        <td className="py-2.5 px-3">
+                          <div className="font-bold text-[#17324D]">{u.name}</div>
+                          <div className="text-[11px] text-[#53677D] font-mono">{u.email}</div>
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                              u.role === 'admin'
+                                ? 'bg-purple-100 text-purple-800'
+                                : u.role === 'bureau_officer' || u.role === 'officer'
+                                ? 'bg-blue-100 text-blue-800'
+                                : 'bg-slate-100 text-slate-700'
+                            }`}
+                          >
+                            {u.role === 'admin' ? 'Administration' : u.role === 'bureau_officer' || u.role === 'officer' ? 'Bureau Officer' : 'Public'}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-[#53677D]">
+                          {u.bureauName || 'Central Council'}
+                        </td>
+                        <td className="py-2.5 px-3 text-[#17324D] font-medium">
+                          {u.designation}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Right Col: Add New Staff Member Form */}
+            <div className="bg-white rounded-xl border border-[#D6E4F0] p-5 shadow-xs space-y-4">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-[#17324D] flex items-center gap-1.5">
+                <UserPlus className="w-4 h-4 text-[#0B477F]" />
+                <span>Provision Staff Account</span>
+              </h4>
+
+              {userCreatedMsg && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800 font-semibold flex items-center gap-2">
+                  <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Account provisioned and RBAC clearance applied!</span>
+                </div>
+              )}
+
+              <form onSubmit={handleCreateUser} className="space-y-3 text-xs">
+                <div>
+                  <label className="block font-bold text-[#17324D] mb-1">Full Officer Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={newUserName}
+                    onChange={(e) => setNewUserName(e.target.value)}
+                    placeholder="e.g. Dr. Rajeshwari Nair"
+                    className="w-full p-2 border border-[#D6E4F0] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#0B477F]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-[#17324D] mb-1">Official Email Address</label>
+                  <input
+                    type="email"
+                    required
+                    value={newUserEmail}
+                    onChange={(e) => setNewUserEmail(e.target.value)}
+                    placeholder="e.g. rnair.officer@aicte-demo.gov.in"
+                    className="w-full p-2 border border-[#D6E4F0] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#0B477F]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-[#17324D] mb-1">Portal Clearance Role</label>
+                  <select
+                    value={newUserRole}
+                    onChange={(e) => setNewUserRole(e.target.value as 'admin' | 'bureau_officer')}
+                    className="w-full p-2 border border-[#D6E4F0] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#0B477F]"
+                  >
+                    <option value="bureau_officer">Bureau Officer Portal</option>
+                    <option value="admin">Administration Portal</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-[#17324D] mb-1">Official Designation</label>
+                  <input
+                    type="text"
+                    required
+                    value={newUserDesignation}
+                    onChange={(e) => setNewUserDesignation(e.target.value)}
+                    placeholder="e.g. Deputy Director (Technical)"
+                    className="w-full p-2 border border-[#D6E4F0] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#0B477F]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-[#17324D] mb-1">Assigned Bureau Cell</label>
+                  <select
+                    value={newUserBureau}
+                    onChange={(e) => setNewUserBureau(e.target.value)}
+                    className="w-full p-2 border border-[#D6E4F0] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#0B477F]"
+                  >
+                    {bureaus.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name} ({b.shortName})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-2.5 px-4 bg-[#0B477F] hover:bg-[#064578] text-white rounded-lg font-bold shadow-xs transition-colors mt-2"
+                >
+                  Create & Authorize Account
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
       {allocationModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
           <div className="bg-white rounded-xl max-w-lg w-full p-6 shadow-xl border border-[#D6E4F0]">
