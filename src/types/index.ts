@@ -1,4 +1,13 @@
-export type UserRole = 'public' | 'admin' | 'officer' | 'verification' | 'supervisor' | 'management';
+export type ActivePortalRole = 'public' | 'admin' | 'bureau_officer';
+
+export type UserRole =
+  | 'public'
+  | 'admin'
+  | 'bureau_officer'
+  | 'officer' // legacy alias for bureau_officer
+  | 'verification' // legacy role preserved for database integrity
+  | 'supervisor'   // legacy role preserved for database integrity
+  | 'management';  // legacy role preserved for database integrity
 
 export interface User {
   id: string;
@@ -10,6 +19,7 @@ export interface User {
   bureauName?: string;
   avatarUrl?: string;
   phone?: string;
+  password?: string;
 }
 
 export type ComplaintStatus =

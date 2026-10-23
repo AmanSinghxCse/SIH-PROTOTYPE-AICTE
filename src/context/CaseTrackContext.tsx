@@ -47,6 +47,10 @@ export type PermissionAction =
 
 interface CaseTrackContextType {
   currentUser: User;
+  isAuthenticated: boolean;
+  activePortal: 'public' | 'admin' | 'bureau_officer';
+  login: (email: string, password: string, portal: 'admin' | 'bureau_officer') => Promise<{ success: boolean; error?: string }>;
+  logout: () => void;
   switchUserRole: (role: UserRole) => void;
   institutions: Institution[];
   bureaus: Bureau[];
@@ -80,18 +84,42 @@ interface CaseTrackContextType {
 
 const CaseTrackContext = createContext<CaseTrackContextType | undefined>(undefined);
 
-const STORAGE_KEY_PREFIX = 'aicte_casetrack_v2_';
+const STORAGE_KEY_PREFIX = 'aicte_casetrack_v3_';
 
 export const CaseTrackProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // Session check
+  const [session, setSession] = useState<{ userId: string; email: string; role: UserRole; portal: 'public' | 'admin' | 'bureau_officer' } | null>(() => {
+    const saved = localStorage.getItem(`${STORAGE_KEY_PREFIX}auth_session`);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  });
+
+  const isAuthenticated = Boolean(session);
+
   // Current user state
   const [currentUser, setCurrentUser] = useState<User>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY_PREFIX}user_role`);
-    if (saved) {
-      const found = INITIAL_USERS.find(u => u.role === saved);
+    if (session) {
+      const found = INITIAL_USERS.find(
+        u => u.id === session.userId || u.email.toLowerCase() === session.email.toLowerCase()
+      );
       if (found) return found;
     }
-    return INITIAL_USERS[0]; // Admin by default
+    return INITIAL_USERS[0]; // Public Ananya Sharma by default
   });
+
+  const activePortal: 'public' | 'admin' | 'bureau_officer' = session
+    ? session.portal
+    : currentUser.role === 'admin'
+    ? 'admin'
+    : currentUser.role === 'bureau_officer' || currentUser.role === 'officer'
+    ? 'bureau_officer'
+    : 'public';
 
   // Complaints state
   const [complaints, setComplaints] = useState<Complaint[]>(() => {
@@ -199,49 +227,134 @@ export const CaseTrackProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // Role permissions checker
   const hasPermission = (action: PermissionAction): boolean => {
     const role = currentUser.role;
+    const isAdmin = role === 'admin';
+    const isOfficer = role === 'bureau_officer' || role === 'officer';
+
     switch (action) {
       case 'manage_settings':
       case 'manage_users':
-        return role === 'admin';
-      case 'view_audit':
-        return role === 'admin' || role === 'supervisor';
       case 'assign_case':
-        return role === 'admin' || role === 'supervisor';
       case 'verify_case':
-        return role === 'admin' || role === 'verification';
       case 'approve_closure':
-        return role === 'admin' || role === 'supervisor';
-      case 'change_status':
-        return role === 'admin' || role === 'officer' || role === 'supervisor' || role === 'verification';
-      case 'edit_case':
-        return role === 'admin' || role === 'officer';
-      case 'review_related':
-        return role === 'admin' || role === 'officer' || role === 'supervisor' || role === 'verification';
-      case 'create_complaint':
-        return true;
-      case 'view_internal_notes':
-        return role !== 'public' && role !== 'management';
-      case 'view_all_complaints':
-        return role !== 'public';
+      case 'view_audit':
       case 'export_reports':
-        return role === 'admin' || role === 'management' || role === 'supervisor';
+        return isAuthenticated && isAdmin;
+
+      case 'change_status':
+      case 'edit_case':
+      case 'review_related':
+      case 'view_internal_notes':
+        return isAuthenticated && (isAdmin || isOfficer);
+
+      case 'create_complaint':
+        return true; // Anyone can register a complaint
+
+      case 'view_all_complaints':
+        return isAuthenticated && isAdmin;
+
       default:
         return false;
     }
   };
 
-  // Switch role
+  // Secure Portal Login
+  const login = async (
+    email: string,
+    password: string,
+    portal: 'admin' | 'bureau_officer'
+  ): Promise<{ success: boolean; error?: string }> => {
+    // Simulated auth delay
+    await new Promise(r => setTimeout(r, 450));
+
+    const normalized = email.trim().toLowerCase();
+    const user = INITIAL_USERS.find(u => u.email.toLowerCase() === normalized);
+
+    // Generic error to prevent user enumeration
+    if (!user || user.password !== password) {
+      return {
+        success: false,
+        error: 'Invalid official credentials. Please check your registered email and password.'
+      };
+    }
+
+    const isOfficer = user.role === 'bureau_officer' || user.role === 'officer';
+    if (portal === 'admin' && user.role !== 'admin') {
+      return {
+        success: false,
+        error: 'Access Denied: Your account does not have Administration credentials.'
+      };
+    }
+
+    if (portal === 'bureau_officer' && !isOfficer) {
+      return {
+        success: false,
+        error: 'Access Denied: Your account does not have Bureau Officer credentials.'
+      };
+    }
+
+    const sess = {
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      portal,
+      token: `cmis_jwt_${Date.now()}`
+    };
+
+    setSession(sess);
+    setCurrentUser(user);
+    localStorage.setItem(`${STORAGE_KEY_PREFIX}auth_session`, JSON.stringify(sess));
+
+    addAuditLogEntry({
+      action: 'Official Portal Authentication',
+      entityType: 'SystemSettings',
+      entityId: user.id,
+      details: `User ${user.name} authenticated into ${portal.toUpperCase()} portal`,
+      newValue: portal
+    });
+
+    return { success: true };
+  };
+
+  // Logout
+  const logout = () => {
+    localStorage.removeItem(`${STORAGE_KEY_PREFIX}auth_session`);
+    setSession(null);
+    setCurrentUser(INITIAL_USERS[0]); // Return to public complainant
+
+    addAuditLogEntry({
+      action: 'Official Portal Logout',
+      entityType: 'SystemSettings',
+      entityId: currentUser.id,
+      details: `Session terminated for user ${currentUser.name}`
+    });
+  };
+
+  // Switch role helper
   const switchUserRole = (role: UserRole) => {
     const targetUser = INITIAL_USERS.find(u => u.role === role) || INITIAL_USERS[0];
     setCurrentUser(targetUser);
-    localStorage.setItem(`${STORAGE_KEY_PREFIX}user_role`, role);
 
-    // Audit log
+    if (role === 'public') {
+      setSession(null);
+      localStorage.removeItem(`${STORAGE_KEY_PREFIX}auth_session`);
+    } else {
+      const portal = role === 'admin' ? 'admin' : 'bureau_officer';
+      const sess = {
+        userId: targetUser.id,
+        email: targetUser.email,
+        role: targetUser.role,
+        portal: portal as 'admin' | 'bureau_officer',
+        token: `cmis_jwt_${Date.now()}`
+      };
+      setSession(sess);
+      localStorage.setItem(`${STORAGE_KEY_PREFIX}auth_session`, JSON.stringify(sess));
+    }
+
     addAuditLogEntry({
-      action: 'Role Switched',
+      action: 'Session Role Altered',
       entityType: 'SystemSettings',
       entityId: targetUser.id,
-      details: `Active session role switched to ${role.toUpperCase()} (${targetUser.name})`,
+      details: `Active role updated to ${role.toUpperCase()} (${targetUser.name})`,
       newValue: role
     });
   };
@@ -938,6 +1051,10 @@ export const CaseTrackProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     <CaseTrackContext.Provider
       value={{
         currentUser,
+        isAuthenticated,
+        activePortal,
+        login,
+        logout,
         switchUserRole,
         institutions,
         bureaus,

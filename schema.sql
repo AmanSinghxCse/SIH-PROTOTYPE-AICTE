@@ -3,12 +3,12 @@
 -- Integrated Complaint Monitoring & Tracking System
 -- ====================================================================
 
--- 1. Profiles & Roles Table
+-- 1. Profiles & Roles Table (3 Core Portals: Public, Admin, Bureau Officer)
 CREATE TABLE IF NOT EXISTS profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     email TEXT UNIQUE NOT NULL,
     full_name TEXT NOT NULL,
-    role TEXT NOT NULL CHECK (role IN ('admin', 'officer', 'supervisor', 'management')),
+    role TEXT NOT NULL CHECK (role IN ('public', 'admin', 'bureau_officer', 'officer')),
     designation TEXT,
     bureau_id TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -140,17 +140,34 @@ ALTER TABLE complaints ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE related_case_suggestions ENABLE ROW LEVEL SECURITY;
 
--- Read policy: Permitted roles can view records
-CREATE POLICY "Allow authenticated read" ON complaints
-    FOR SELECT TO authenticated USING (true);
+-- Read policy:
+-- 1. Admins have global read oversight
+-- 2. Bureau officers can read complaints assigned to their Bureau (or all bureau dockets)
+-- 3. Public complainants can only read complaints matching their authenticated email/token
+CREATE POLICY "Role based complaint read" ON complaints
+    FOR SELECT TO authenticated
+    USING (
+        EXISTS (
+            SELECT 1 FROM profiles 
+            WHERE profiles.id = auth.uid() 
+            AND (
+                profiles.role = 'admin'
+                OR (profiles.role IN ('bureau_officer', 'officer') AND (profiles.bureau_id IS NULL OR complaints.bureau_id = profiles.bureau_id))
+                OR (profiles.role = 'public' AND complaints.complainant_email = profiles.email)
+            )
+        )
+    );
 
--- Update policy: Admin, Officer, Supervisor can mutate status
+-- Mutation policy: Admin and assigned Bureau Officers can update status and inquiry notes
 CREATE POLICY "Allow authorized status mutation" ON complaints
     FOR UPDATE TO authenticated
     USING (
         EXISTS (
             SELECT 1 FROM profiles 
             WHERE profiles.id = auth.uid() 
-            AND profiles.role IN ('admin', 'officer', 'supervisor')
+            AND (
+                profiles.role = 'admin'
+                OR (profiles.role IN ('bureau_officer', 'officer') AND complaints.bureau_id = profiles.bureau_id)
+            )
         )
     );

@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useCaseTrack } from '../../context/CaseTrackContext';
-import { UserRole } from '../../types';
 import { isApproachingDeadline, isOverdue } from '../../utils/dateUtils';
 import {
   Search,
@@ -13,7 +12,6 @@ import {
   RotateCcw,
   AlertTriangle,
   Clock,
-  ExternalLink,
   Menu,
   X,
   PlusCircle,
@@ -21,11 +19,12 @@ import {
   LayoutDashboard,
   FileText,
   Building2,
-  GitCompare,
-  GitBranch,
-  BarChart3,
   FileCheck2,
-  UserCheck
+  UserCheck,
+  LogOut,
+  LogIn,
+  HelpCircle,
+  BarChart3
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -37,7 +36,9 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenGuidedTour }) => {
   const location = useLocation();
   const {
     currentUser,
-    switchUserRole,
+    isAuthenticated,
+    activePortal,
+    logout,
     complaints,
     relatedSuggestions,
     settings,
@@ -77,7 +78,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenGuidedTour }) => {
     setIsMobileMenuOpen(false);
   }, [location.pathname]);
 
-  // Compute live notifications from database records
+  // Compute live notifications from database records (only for authenticated staff)
   const overdueComplaints = complaints.filter(c => isOverdue(c.deadlineDate, c.status));
   const approachingComplaints = complaints.filter(c =>
     isApproachingDeadline(c.deadlineDate, c.status, settings.approachingDeadlineDays)
@@ -101,45 +102,51 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenGuidedTour }) => {
         .slice(0, 6)
     : [];
 
-  const roles: Array<{ role: UserRole; label: string; desc: string; path: string }> = [
-    { role: 'public', label: 'Public Portal', desc: 'Register complaints, track status, and view updates', path: '/portal/public' },
-    { role: 'admin', label: 'Administration Portal', desc: 'Oversee allocations, registry, users & reports', path: '/portal/admin' },
-    { role: 'officer', label: 'Bureau Officer Portal', desc: 'Review assigned complaints & update progress', path: '/portal/officer' }
-  ];
-
-  // Dynamic primaryNavItems based on role matching exact section 7 specifications
+  // Dynamic navigation items based on active role & auth strictly adhering to Section 7
   const getNavItemsForRole = () => {
-    switch (currentUser.role) {
-      case 'public':
-        return [
-          { to: '/', label: 'Home', icon: Home },
-          { to: '/register', label: 'Register Complaint', icon: PlusCircle },
-          { to: '/portal/public', label: 'Track Complaint', icon: Search },
-          { to: '/portal/public', label: 'My Complaints', icon: FileText }
-        ];
-      case 'officer':
-        return [
-          { to: '/portal/officer', label: 'Dashboard', icon: LayoutDashboard },
-          { to: '/portal/officer', label: 'Assigned Cases', icon: FileText, badge: complaints.filter(c => c.bureauId === (currentUser.bureauId || 'BUR-GRV')).length },
-          { to: '/institutions', label: 'Institution History', icon: Building2 },
-          { to: '/case-intelligence', label: 'Related Cases', icon: GitCompare, badge: pendingSuggestions.length > 0 ? pendingSuggestions.length : null },
-          { to: '/portal/officer', label: 'Case Updates', icon: Clock }
-        ];
-      case 'admin':
-      default:
-        return [
-          { to: '/portal/admin', label: 'Dashboard', icon: Shield },
-          { to: '/registry', label: 'Complaint Registry', icon: FileText, badge: complaints.length },
-          { to: '/portal/admin', label: 'Assignments', icon: UserCheck },
-          { to: '/institutions', label: 'Institutions', icon: Building2 },
-          { to: '/analytics', label: 'Analytics and Reports', icon: BarChart3 },
-          { to: '/portal/admin', label: 'User Management', icon: LayoutDashboard },
-          { to: '/audit', label: 'Audit History', icon: FileCheck2 }
-        ];
+    if (!isAuthenticated || currentUser.role === 'public') {
+      return [
+        { to: '/', label: 'Home', icon: Home },
+        { to: '/register', label: 'Register Complaint', icon: PlusCircle },
+        { to: '/portal/public', label: 'Track Complaint', icon: Search },
+        { to: '/help', label: 'Help', icon: HelpCircle }
+      ];
     }
+
+    if (currentUser.role === 'bureau_officer' || currentUser.role === 'officer') {
+      return [
+        { to: '/portal/officer', label: 'Dashboard', icon: LayoutDashboard },
+        {
+          to: '/portal/officer',
+          label: 'My Assigned Cases',
+          icon: FileText,
+          badge: complaints.filter(c => c.bureauId === (currentUser.bureauId || 'BUR-GRV')).length
+        },
+        { to: '/portal/officer', label: 'Case Review', icon: Clock },
+        { to: '/institutions', label: 'Institution History', icon: Building2 },
+        { to: '/portal/officer', label: 'Action Updates', icon: UserCheck }
+      ];
+    }
+
+    // Default: Administration Portal
+    return [
+      { to: '/portal/admin', label: 'Dashboard', icon: LayoutDashboard },
+      { to: '/registry', label: 'Complaint Registry', icon: FileText, badge: complaints.length },
+      { to: '/portal/admin', label: 'Assign Cases', icon: UserCheck },
+      { to: '/institutions', label: 'Institutions', icon: Building2 },
+      { to: '/analytics', label: 'Reports', icon: BarChart3 },
+      { to: '/portal/admin', label: 'Staff Management', icon: Shield },
+      { to: '/audit', label: 'Audit History', icon: FileCheck2 }
+    ];
   };
 
   const primaryNavItems = getNavItemsForRole();
+
+  const handleSignOut = () => {
+    logout();
+    navigate('/');
+    setIsRoleDropdownOpen(false);
+  };
 
   return (
     <header className="sticky top-0 z-40 bg-white shadow-md border-b border-[#D6E4F0]">
@@ -277,188 +284,190 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenGuidedTour }) => {
               <span>SIH Pitch</span>
             </button>
 
-            {/* Notifications Bell */}
-            <div ref={notifRef} className="relative">
-              <button
-                onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
-                className="relative p-2 rounded-lg text-[#53677D] hover:text-[#17324D] hover:bg-[#F1F7FC] border border-[#D6E4F0] transition-colors"
-                title="System alerts & pending reviews"
-              >
-                <Bell className="w-4 h-4 text-[#0B477F]" />
-                {totalAlertCount > 0 && (
-                  <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[#C43D3D] text-white text-[10px] font-bold flex items-center justify-center shadow-xs">
-                    {totalAlertCount}
-                  </span>
-                )}
-              </button>
+            {/* Notifications Bell - Only for Authenticated Staff */}
+            {isAuthenticated && (
+              <div ref={notifRef} className="relative">
+                <button
+                  onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+                  className="relative p-2 rounded-lg text-[#53677D] hover:text-[#17324D] hover:bg-[#F1F7FC] border border-[#D6E4F0] transition-colors"
+                  title="System alerts & pending reviews"
+                >
+                  <Bell className="w-4 h-4 text-[#0B477F]" />
+                  {totalAlertCount > 0 && (
+                    <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[#C43D3D] text-white text-[10px] font-bold flex items-center justify-center shadow-xs">
+                      {totalAlertCount}
+                    </span>
+                  )}
+                </button>
 
-              {/* Notifications Popover */}
-              {isNotificationsOpen && (
-                <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-xl shadow-xl border border-[#D6E4F0] overflow-hidden z-50 animate-fadeIn">
-                  <div className="p-3 bg-[#F1F7FC] border-b border-[#D6E4F0] flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <AlertTriangle className="w-4 h-4 text-[#D97706]" />
-                      <span className="text-xs font-bold text-[#17324D]">
-                        Active Alerts ({totalAlertCount})
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => {
-                        navigate('/alerts');
-                        setIsNotificationsOpen(false);
-                      }}
-                      className="text-[11px] text-[#0B477F] font-semibold hover:underline"
-                    >
-                      View All Alerts
-                    </button>
-                  </div>
-
-                  <div className="divide-y divide-[#D6E4F0] max-h-80 overflow-y-auto text-xs">
-                    {overdueComplaints.map(c => (
-                      <div
-                        key={`notif-overdue-${c.id}`}
-                        onClick={() => {
-                          navigate(`/case/${c.id}`);
-                          setIsNotificationsOpen(false);
-                        }}
-                        className="p-3 hover:bg-rose-50/60 cursor-pointer transition-colors"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-semibold text-[#C43D3D] flex items-center gap-1.5 text-[11px]">
-                            <span className="w-1.5 h-1.5 rounded-full bg-[#C43D3D] animate-ping"></span>
-                            Overdue Complaint
-                          </span>
-                          <span className="font-mono text-[11px] text-[#53677D]">{c.id}</span>
-                        </div>
-                        <div className="text-[#17324D] font-medium mt-0.5 line-clamp-1">{c.title}</div>
-                        <div className="text-[#53677D] text-[11px] mt-0.5">{c.institutionName}</div>
+                {/* Notifications Popover */}
+                {isNotificationsOpen && (
+                  <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-xl shadow-xl border border-[#D6E4F0] overflow-hidden z-50 animate-fadeIn">
+                    <div className="p-3 bg-[#F1F7FC] border-b border-[#D6E4F0] flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-[#D97706]" />
+                        <span className="text-xs font-bold text-[#17324D]">
+                          Active Alerts ({totalAlertCount})
+                        </span>
                       </div>
-                    ))}
-
-                    {approachingComplaints.map(c => (
-                      <div
-                        key={`notif-app-${c.id}`}
-                        onClick={() => {
-                          navigate(`/case/${c.id}`);
-                          setIsNotificationsOpen(false);
-                        }}
-                        className="p-3 hover:bg-amber-50/60 cursor-pointer transition-colors"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-semibold text-[#D97706] flex items-center gap-1.5 text-[11px]">
-                            <Clock className="w-3 h-3 text-[#D97706]" />
-                            Approaching Deadline
-                          </span>
-                          <span className="font-mono text-[11px] text-[#53677D]">{c.id}</span>
-                        </div>
-                        <div className="text-[#17324D] font-medium mt-0.5 line-clamp-1">{c.title}</div>
-                        <div className="text-[#53677D] text-[11px] mt-0.5">Deadline: {c.deadlineDate}</div>
-                      </div>
-                    ))}
-
-                    {pendingSuggestions.map(s => (
-                      <div
-                        key={`notif-sugg-${s.id}`}
-                        onClick={() => {
-                          navigate('/case-intelligence');
-                          setIsNotificationsOpen(false);
-                        }}
-                        className="p-3 hover:bg-[#E5F1FC] cursor-pointer transition-colors"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-semibold text-[#0B477F] text-[11px]">
-                            Related Case Match ({s.overallScore}%)
-                          </span>
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#E5F1FC] text-[#0B477F] font-semibold border border-[#D6E4F0]">
-                            Review
-                          </span>
-                        </div>
-                        <div className="text-[#53677D] text-[11px] mt-1 line-clamp-1">
-                          {s.complaintId} ↔ {s.relatedComplaintId}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Active Demo Role Switcher Dropdown */}
-            <div ref={roleRef} className="relative">
-              <button
-                onClick={() => setIsRoleDropdownOpen(!isRoleDropdownOpen)}
-                className="flex items-center gap-2 p-1.5 sm:px-3 sm:py-1.5 rounded-lg border border-[#D6E4F0] bg-[#F1F7FC] hover:bg-[#E5F1FC] transition-all text-left"
-              >
-                <div className="w-6 h-6 rounded-full bg-[#0B477F] text-white flex items-center justify-center text-xs font-bold shrink-0">
-                  {currentUser.name.charAt(0)}
-                </div>
-                <div className="hidden sm:block">
-                  <div className="text-xs font-bold text-[#17324D] line-clamp-1 leading-tight">{currentUser.name}</div>
-                  <div className="text-[10px] text-[#155A91] font-semibold uppercase tracking-wider">
-                    {currentUser.role}
-                  </div>
-                </div>
-                <ChevronDown className="w-3.5 h-3.5 text-[#53677D]" />
-              </button>
-
-              {isRoleDropdownOpen && (
-                <div className="absolute right-0 mt-2 w-72 bg-white rounded-xl shadow-xl border border-[#D6E4F0] overflow-hidden z-50 animate-fadeIn">
-                  <div className="p-3 bg-[#F1F7FC] border-b border-[#D6E4F0]">
-                    <div className="text-xs font-bold text-[#17324D]">Switch User Role</div>
-                    <div className="text-[11px] text-[#53677D] mt-0.5">
-                      Verify permissions and workflow restrictions per role.
-                    </div>
-                  </div>
-
-                  <div className="p-2 space-y-1">
-                    {roles.map(r => (
                       <button
-                        key={r.role}
                         onClick={() => {
-                          switchUserRole(r.role);
-                          navigate(r.path);
+                          navigate('/alerts');
+                          setIsNotificationsOpen(false);
+                        }}
+                        className="text-[11px] text-[#0B477F] font-semibold hover:underline"
+                      >
+                        View All Alerts
+                      </button>
+                    </div>
+
+                    <div className="divide-y divide-[#D6E4F0] max-h-80 overflow-y-auto text-xs">
+                      {overdueComplaints.map(c => (
+                        <div
+                          key={`notif-overdue-${c.id}`}
+                          onClick={() => {
+                            navigate(`/case/${c.id}`);
+                            setIsNotificationsOpen(false);
+                          }}
+                          className="p-3 hover:bg-rose-50/60 cursor-pointer transition-colors"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-[#C43D3D] flex items-center gap-1.5 text-[11px]">
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#C43D3D] animate-ping"></span>
+                              Overdue Complaint
+                            </span>
+                            <span className="font-mono text-[11px] text-[#53677D]">{c.id}</span>
+                          </div>
+                          <div className="text-[#17324D] font-medium mt-0.5 line-clamp-1">{c.title}</div>
+                          <div className="text-[#53677D] text-[11px] mt-0.5">{c.institutionName}</div>
+                        </div>
+                      ))}
+
+                      {approachingComplaints.map(c => (
+                        <div
+                          key={`notif-app-${c.id}`}
+                          onClick={() => {
+                            navigate(`/case/${c.id}`);
+                            setIsNotificationsOpen(false);
+                          }}
+                          className="p-3 hover:bg-amber-50/60 cursor-pointer transition-colors"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-[#D97706] flex items-center gap-1.5 text-[11px]">
+                              <Clock className="w-3 h-3 text-[#D97706]" />
+                              Approaching Deadline
+                            </span>
+                            <span className="font-mono text-[11px] text-[#53677D]">{c.id}</span>
+                          </div>
+                          <div className="text-[#17324D] font-medium mt-0.5 line-clamp-1">{c.title}</div>
+                          <div className="text-[#53677D] text-[11px] mt-0.5">Deadline: {c.deadlineDate}</div>
+                        </div>
+                      ))}
+
+                      {pendingSuggestions.map(s => (
+                        <div
+                          key={`notif-sugg-${s.id}`}
+                          onClick={() => {
+                            navigate('/case-intelligence');
+                            setIsNotificationsOpen(false);
+                          }}
+                          className="p-3 hover:bg-[#E5F1FC] cursor-pointer transition-colors"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-[#0B477F] text-[11px]">
+                              Related Case Match ({s.overallScore}%)
+                            </span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#E5F1FC] text-[#0B477F] font-semibold border border-[#D6E4F0]">
+                              Review
+                            </span>
+                          </div>
+                          <div className="text-[#53677D] text-[11px] mt-1 line-clamp-1">
+                            {s.complaintId} ↔ {s.relatedComplaintId}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* User Session & Role Controls */}
+            {isAuthenticated ? (
+              <div ref={roleRef} className="relative">
+                <button
+                  onClick={() => setIsRoleDropdownOpen(!isRoleDropdownOpen)}
+                  className="flex items-center gap-2 p-1.5 sm:px-3 sm:py-1.5 rounded-lg border border-[#D6E4F0] bg-[#F1F7FC] hover:bg-[#E5F1FC] transition-all text-left"
+                >
+                  <div className="w-6 h-6 rounded-full bg-[#0B477F] text-white flex items-center justify-center text-xs font-bold shrink-0">
+                    {currentUser.name.charAt(0)}
+                  </div>
+                  <div className="hidden sm:block">
+                    <div className="text-xs font-bold text-[#17324D] line-clamp-1 leading-tight">{currentUser.name}</div>
+                    <div className="text-[10px] text-[#155A91] font-semibold uppercase tracking-wider">
+                      {currentUser.role === 'admin' ? 'ADMINISTRATION' : 'BUREAU OFFICER'}
+                    </div>
+                  </div>
+                  <ChevronDown className="w-3.5 h-3.5 text-[#53677D]" />
+                </button>
+
+                {isRoleDropdownOpen && (
+                  <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-[#D6E4F0] overflow-hidden z-50 animate-fadeIn">
+                    <div className="p-3 bg-[#F1F7FC] border-b border-[#D6E4F0]">
+                      <div className="text-xs font-bold text-[#17324D]">{currentUser.name}</div>
+                      <div className="text-[11px] text-[#53677D] truncate">{currentUser.email}</div>
+                      <div className="text-[10px] font-semibold text-[#0B477F] mt-1 uppercase">
+                        {currentUser.role === 'admin' ? 'Administration Portal' : 'Bureau Officer Portal'}
+                      </div>
+                    </div>
+
+                    <div className="p-2 space-y-1">
+                      <button
+                        onClick={() => {
+                          navigate(currentUser.role === 'admin' ? '/portal/admin' : '/portal/officer');
                           setIsRoleDropdownOpen(false);
                         }}
-                        className={`w-full text-left p-2.5 rounded-lg transition-colors flex items-start gap-2.5 ${
-                          currentUser.role === r.role
-                            ? 'bg-[#E5F1FC] text-[#0B477F] border border-[#D6E4F0] font-semibold'
-                            : 'hover:bg-[#F1F7FC] text-[#17324D]'
-                        }`}
+                        className="w-full text-left p-2 rounded-lg hover:bg-[#F1F7FC] text-xs font-medium text-[#17324D] flex items-center gap-2"
                       >
-                        <Shield className={`w-4 h-4 mt-0.5 shrink-0 ${currentUser.role === r.role ? 'text-[#0B477F]' : 'text-[#53677D]'}`} />
-                        <div>
-                          <div className="text-xs font-bold">{r.label}</div>
-                          <div className="text-[11px] text-[#53677D] font-normal leading-tight">{r.desc}</div>
-                        </div>
+                        <LayoutDashboard className="w-4 h-4 text-[#0B477F]" />
+                        <span>My Dashboard</span>
                       </button>
-                    ))}
-                  </div>
 
-                  <div className="p-2.5 bg-[#F1F7FC] border-t border-[#D6E4F0] flex items-center justify-between text-[11px]">
-                    <button
-                      onClick={() => {
-                        navigate('/portals');
-                        setIsRoleDropdownOpen(false);
-                      }}
-                      className="text-[#0B477F] font-bold hover:underline flex items-center gap-1"
-                    >
-                      <Building2 className="w-3.5 h-3.5" />
-                      <span>Select Portal</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        navigate('/login');
-                        setIsRoleDropdownOpen(false);
-                      }}
-                      className="text-[#53677D] font-medium hover:underline flex items-center gap-1"
-                    >
-                      <span>Role Specs</span>
-                      <ExternalLink className="w-3 h-3" />
-                    </button>
+                      <button
+                        onClick={() => {
+                          navigate('/portals');
+                          setIsRoleDropdownOpen(false);
+                        }}
+                        className="w-full text-left p-2 rounded-lg hover:bg-[#F1F7FC] text-xs font-medium text-[#17324D] flex items-center gap-2"
+                      >
+                        <Building2 className="w-4 h-4 text-[#0B477F]" />
+                        <span>Select Portal</span>
+                      </button>
+                    </div>
+
+                    <div className="p-2 bg-[#F1F7FC] border-t border-[#D6E4F0]">
+                      <button
+                        onClick={handleSignOut}
+                        className="w-full text-left p-2 rounded-lg hover:bg-rose-50 text-xs font-bold text-[#C43D3D] flex items-center gap-2"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        <span>Sign Out</span>
+                      </button>
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => navigate('/portals')}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-[#0B477F] hover:bg-[#064578] shadow-xs transition-colors"
+                >
+                  <LogIn className="w-3.5 h-3.5" />
+                  <span>Staff Sign In</span>
+                </button>
+              </div>
+            )}
 
             {/* Mobile Hamburger Button */}
             <button
@@ -621,7 +630,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenGuidedTour }) => {
             })}
           </div>
 
-          <div className="pt-2 border-t border-white/20 flex items-center justify-between gap-2">
+          <div className="pt-2 border-t border-white/20 flex flex-wrap items-center justify-between gap-2">
             <NavLink
               to="/register"
               onClick={() => setIsMobileMenuOpen(false)}
@@ -630,15 +639,24 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenGuidedTour }) => {
               <PlusCircle className="w-4 h-4" />
               <span>Register Complaint</span>
             </NavLink>
-            <button
-              onClick={() => {
-                onOpenGuidedTour();
-                setIsMobileMenuOpen(false);
-              }}
-              className="px-3 py-2 rounded-lg bg-[#064578] text-xs font-semibold text-white border border-white/20"
-            >
-              Demo Tour
-            </button>
+            {isAuthenticated ? (
+              <button
+                onClick={handleSignOut}
+                className="px-3 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-xs font-semibold text-white flex items-center gap-1"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Sign Out</span>
+              </button>
+            ) : (
+              <NavLink
+                to="/portals"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="px-3 py-2 rounded-lg bg-[#064578] text-xs font-semibold text-white border border-white/20 flex items-center gap-1"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                <span>Staff Sign In</span>
+              </NavLink>
+            )}
           </div>
         </div>
       )}

@@ -28,23 +28,25 @@ export const INITIAL_USERS: User[] = [
     role: 'admin',
     designation: 'Senior System Administrator & Nodal Incharge',
     bureauId: 'BUR-GRV',
-    bureauName: 'Grievance Redressal Cell'
+    bureauName: 'Grievance Redressal Cell',
+    password: 'Admin@AICTE2026'
   },
   {
     id: 'USR-OFFICER-01',
     name: 'Smt. Sunita Verma',
     email: 'sverma.officer@aicte-demo.gov.in',
-    role: 'officer',
+    role: 'bureau_officer',
     designation: 'Assistant Director / Bureau Grievance Officer',
     bureauId: 'BUR-GRV',
-    bureauName: 'Grievance Redressal Cell'
+    bureauName: 'Grievance Redressal Cell',
+    password: 'Officer@AICTE2026'
   },
   {
     id: 'USR-VERIFY-01',
     name: 'Shri Rameshwar Nath',
     email: 'rnath.verify@aicte-demo.gov.in',
     role: 'verification',
-    designation: 'Senior Verification Officer & Scrutiny Lead',
+    designation: 'Senior Verification Officer & Scrutiny Lead (Non-Portal Legacy Account)',
     bureauId: 'BUR-GRV',
     bureauName: 'Grievance Redressal Cell'
   },
@@ -53,7 +55,7 @@ export const INITIAL_USERS: User[] = [
     name: 'Dr. P. K. Nambiar',
     email: 'pknambiar.dir@aicte-demo.gov.in',
     role: 'supervisor',
-    designation: 'Director & Appellate Review Authority',
+    designation: 'Director & Appellate Review Authority (Non-Portal Legacy Account)',
     bureauId: 'BUR-QAB',
     bureauName: 'Quality Assurance Bureau'
   },
@@ -62,7 +64,7 @@ export const INITIAL_USERS: User[] = [
     name: 'Prof. M. S. Ramachandran',
     email: 'ramachandran.ms@aicte-demo.gov.in',
     role: 'management',
-    designation: 'Advisor & Executive Management Observer',
+    designation: 'Advisor & Executive Management Observer (Non-Portal Legacy Account)',
     bureauId: 'BUR-APP',
     bureauName: 'Approval Bureau'
   }

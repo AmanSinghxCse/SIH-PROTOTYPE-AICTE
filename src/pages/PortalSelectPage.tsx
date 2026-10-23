@@ -88,9 +88,9 @@ const PORTALS: PortalCardConfig[] = [
 ];
 
 export const PortalSelectPage: React.FC = () => {
-  const { currentUser, switchUserRole } = useCaseTrack();
+  const { currentUser, switchUserRole, isAuthenticated } = useCaseTrack();
   const [selectedRole, setSelectedRole] = useState<'public' | 'admin' | 'officer'>(
-    currentUser.role === 'officer' ? 'officer' : currentUser.role === 'public' ? 'public' : 'admin'
+    currentUser.role === 'officer' || currentUser.role === 'bureau_officer' ? 'officer' : currentUser.role === 'admin' ? 'admin' : 'public'
   );
   const navigate = useNavigate();
 
@@ -99,8 +99,22 @@ export const PortalSelectPage: React.FC = () => {
   };
 
   const handleEnterPortal = (role: 'public' | 'admin' | 'officer') => {
-    switchUserRole(role);
-    navigate(`/portal/${role}`);
+    if (role === 'public') {
+      switchUserRole('public');
+      navigate('/portal/public');
+    } else if (role === 'admin') {
+      if (isAuthenticated && currentUser.role === 'admin') {
+        navigate('/portal/admin');
+      } else {
+        navigate('/admin/login');
+      }
+    } else if (role === 'officer') {
+      if (isAuthenticated && (currentUser.role === 'bureau_officer' || currentUser.role === 'officer')) {
+        navigate('/portal/officer');
+      } else {
+        navigate('/officer/login');
+      }
+    }
   };
 
   return (
