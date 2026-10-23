@@ -1,0 +1,981 @@
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import {
+  User,
+  UserRole,
+  Complaint,
+  Institution,
+  Bureau,
+  TimelineEvent,
+  ComplaintNote,
+  RelatedCaseSuggestion,
+  AuditLog,
+  SystemSettings,
+  ComplaintStatus,
+  ProjectMilestone,
+  MilestoneStatus,
+  LifecycleStage
+} from '../types';
+import {
+  INITIAL_USERS,
+  INITIAL_BUREAUS,
+  INITIAL_INSTITUTIONS,
+  INITIAL_COMPLAINTS,
+  INITIAL_TIMELINE_EVENTS,
+  INITIAL_NOTES,
+  INITIAL_RELATED_SUGGESTIONS,
+  INITIAL_AUDIT_LOGS,
+  INITIAL_SYSTEM_SETTINGS,
+  INITIAL_PROJECT_MILESTONES,
+  INITIAL_LIFECYCLE_STAGES
+} from '../data/seedData';
+import { calculateRelatedness } from '../utils/matchingEngine';
+
+export type PermissionAction =
+  | 'edit_case'
+  | 'change_status'
+  | 'assign_case'
+  | 'verify_case'
+  | 'approve_closure'
+  | 'review_related'
+  | 'manage_settings'
+  | 'manage_users'
+  | 'view_audit'
+  | 'create_complaint'
+  | 'view_internal_notes'
+  | 'view_all_complaints'
+  | 'export_reports';
+
+interface CaseTrackContextType {
+  currentUser: User;
+  switchUserRole: (role: UserRole) => void;
+  institutions: Institution[];
+  bureaus: Bureau[];
+  complaints: Complaint[];
+  timelineEvents: Record<string, TimelineEvent[]>;
+  notes: Record<string, ComplaintNote[]>;
+  relatedSuggestions: RelatedCaseSuggestion[];
+  auditLogs: AuditLog[];
+  settings: SystemSettings;
+  reviewedAlertIds: string[];
+  milestones: ProjectMilestone[];
+  lifecycleStages: LifecycleStage[];
+  updateMilestoneStatus: (id: number, newStatus: MilestoneStatus) => void;
+
+  // Actions
+  addComplaint: (draft: any) => Complaint | null;
+  updateComplaintStatus: (id: string, newStatus: ComplaintStatus, reason: string) => boolean;
+  updateVerificationStatus: (id: string, status: 'Verified' | 'Pending' | 'Needs Information' | 'Flagged', remarks: string) => boolean;
+  approveCaseClosure: (id: string, approved: boolean, remarks: string) => boolean;
+  requestComplainantInfo: (id: string, query: string) => boolean;
+  assignComplaint: (id: string, bureauId: string, officerId: string, notes?: string) => boolean;
+  editComplaint: (id: string, updates: Partial<Complaint>) => boolean;
+  addNote: (complaintId: string, content: string, actionItem?: string, isOfficialAction?: boolean) => boolean;
+  confirmRelationship: (suggestionId: string, reviewNotes?: string) => boolean;
+  rejectRelationship: (suggestionId: string, reviewNotes?: string) => boolean;
+  markAlertReviewed: (alertId: string) => void;
+  updateSettings: (newSettings: Partial<SystemSettings>) => boolean;
+  resetDemoData: () => void;
+  hasPermission: (action: PermissionAction) => boolean;
+}
+
+const CaseTrackContext = createContext<CaseTrackContextType | undefined>(undefined);
+
+const STORAGE_KEY_PREFIX = 'aicte_casetrack_v2_';
+
+export const CaseTrackProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // Current user state
+  const [currentUser, setCurrentUser] = useState<User>(() => {
+    const saved = localStorage.getItem(`${STORAGE_KEY_PREFIX}user_role`);
+    if (saved) {
+      const found = INITIAL_USERS.find(u => u.role === saved);
+      if (found) return found;
+    }
+    return INITIAL_USERS[0]; // Admin by default
+  });
+
+  // Complaints state
+  const [complaints, setComplaints] = useState<Complaint[]>(() => {
+    const saved = localStorage.getItem(`${STORAGE_KEY_PREFIX}complaints`);
+    return saved ? JSON.parse(saved) : INITIAL_COMPLAINTS;
+  });
+
+  // Institutions & Bureaus
+  const [institutions] = useState<Institution[]>(INITIAL_INSTITUTIONS);
+  const [bureaus] = useState<Bureau[]>(INITIAL_BUREAUS);
+
+  // Timeline events
+  const [timelineEvents, setTimelineEvents] = useState<Record<string, TimelineEvent[]>>(() => {
+    const saved = localStorage.getItem(`${STORAGE_KEY_PREFIX}timeline`);
+    return saved ? JSON.parse(saved) : INITIAL_TIMELINE_EVENTS;
+  });
+
+  // Notes
+  const [notes, setNotes] = useState<Record<string, ComplaintNote[]>>(() => {
+    const saved = localStorage.getItem(`${STORAGE_KEY_PREFIX}notes`);
+    return saved ? JSON.parse(saved) : INITIAL_NOTES;
+  });
+
+  // Related suggestions
+  const [relatedSuggestions, setRelatedSuggestions] = useState<RelatedCaseSuggestion[]>(() => {
+    const saved = localStorage.getItem(`${STORAGE_KEY_PREFIX}suggestions`);
+    return saved ? JSON.parse(saved) : INITIAL_RELATED_SUGGESTIONS;
+  });
+
+  // Audit logs
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => {
+    const saved = localStorage.getItem(`${STORAGE_KEY_PREFIX}audit`);
+    return saved ? JSON.parse(saved) : INITIAL_AUDIT_LOGS;
+  });
+
+  // Reviewed alert IDs
+  const [reviewedAlertIds, setReviewedAlertIds] = useState<string[]>(() => {
+    const saved = localStorage.getItem(`${STORAGE_KEY_PREFIX}reviewed_alerts`);
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  // Settings
+  const [settings, setSettings] = useState<SystemSettings>(() => {
+    const saved = localStorage.getItem(`${STORAGE_KEY_PREFIX}settings`);
+    return saved ? JSON.parse(saved) : INITIAL_SYSTEM_SETTINGS;
+  });
+
+  // Project Milestones
+  const [milestones, setMilestones] = useState<ProjectMilestone[]>(() => {
+    const saved = localStorage.getItem(`${STORAGE_KEY_PREFIX}milestones`);
+    return saved ? JSON.parse(saved) : INITIAL_PROJECT_MILESTONES;
+  });
+
+  // Lifecycle Stages
+  const [lifecycleStages] = useState<LifecycleStage[]>(INITIAL_LIFECYCLE_STAGES);
+
+  // Persist to local storage
+  useEffect(() => {
+    localStorage.setItem(`${STORAGE_KEY_PREFIX}complaints`, JSON.stringify(complaints));
+  }, [complaints]);
+
+  useEffect(() => {
+    localStorage.setItem(`${STORAGE_KEY_PREFIX}timeline`, JSON.stringify(timelineEvents));
+  }, [timelineEvents]);
+
+  useEffect(() => {
+    localStorage.setItem(`${STORAGE_KEY_PREFIX}notes`, JSON.stringify(notes));
+  }, [notes]);
+
+  useEffect(() => {
+    localStorage.setItem(`${STORAGE_KEY_PREFIX}suggestions`, JSON.stringify(relatedSuggestions));
+  }, [relatedSuggestions]);
+
+  useEffect(() => {
+    localStorage.setItem(`${STORAGE_KEY_PREFIX}audit`, JSON.stringify(auditLogs));
+  }, [auditLogs]);
+
+  useEffect(() => {
+    localStorage.setItem(`${STORAGE_KEY_PREFIX}reviewed_alerts`, JSON.stringify(reviewedAlertIds));
+  }, [reviewedAlertIds]);
+
+  useEffect(() => {
+    localStorage.setItem(`${STORAGE_KEY_PREFIX}settings`, JSON.stringify(settings));
+  }, [settings]);
+
+  useEffect(() => {
+    localStorage.setItem(`${STORAGE_KEY_PREFIX}milestones`, JSON.stringify(milestones));
+  }, [milestones]);
+
+  const updateMilestoneStatus = (id: number, newStatus: MilestoneStatus) => {
+    setMilestones(prev =>
+      prev.map(m =>
+        m.id === id ? { ...m, status: newStatus, lastUpdated: '2026-10-23' } : m
+      )
+    );
+    addAuditLogEntry({
+      action: 'Project Milestone Status Updated',
+      entityType: 'ProjectMilestone',
+      entityId: `MILESTONE-${id}`,
+      details: `Milestone #${id} status updated to ${newStatus}`,
+      newValue: newStatus
+    });
+  };
+
+  // Role permissions checker
+  const hasPermission = (action: PermissionAction): boolean => {
+    const role = currentUser.role;
+    switch (action) {
+      case 'manage_settings':
+      case 'manage_users':
+        return role === 'admin';
+      case 'view_audit':
+        return role === 'admin' || role === 'supervisor';
+      case 'assign_case':
+        return role === 'admin' || role === 'supervisor';
+      case 'verify_case':
+        return role === 'admin' || role === 'verification';
+      case 'approve_closure':
+        return role === 'admin' || role === 'supervisor';
+      case 'change_status':
+        return role === 'admin' || role === 'officer' || role === 'supervisor' || role === 'verification';
+      case 'edit_case':
+        return role === 'admin' || role === 'officer';
+      case 'review_related':
+        return role === 'admin' || role === 'officer' || role === 'supervisor' || role === 'verification';
+      case 'create_complaint':
+        return true;
+      case 'view_internal_notes':
+        return role !== 'public' && role !== 'management';
+      case 'view_all_complaints':
+        return role !== 'public';
+      case 'export_reports':
+        return role === 'admin' || role === 'management' || role === 'supervisor';
+      default:
+        return false;
+    }
+  };
+
+  // Switch role
+  const switchUserRole = (role: UserRole) => {
+    const targetUser = INITIAL_USERS.find(u => u.role === role) || INITIAL_USERS[0];
+    setCurrentUser(targetUser);
+    localStorage.setItem(`${STORAGE_KEY_PREFIX}user_role`, role);
+
+    // Audit log
+    addAuditLogEntry({
+      action: 'Role Switched',
+      entityType: 'SystemSettings',
+      entityId: targetUser.id,
+      details: `Active session role switched to ${role.toUpperCase()} (${targetUser.name})`,
+      newValue: role
+    });
+  };
+
+  // Internal audit log creator
+  const addAuditLogEntry = (entry: {
+    action: string;
+    entityType: AuditLog['entityType'];
+    entityId: string;
+    details: string;
+    previousValue?: string;
+    newValue?: string;
+  }) => {
+    const newLog: AuditLog = {
+      id: `AUD-${Date.now().toString().slice(-6)}`,
+      timestamp: new Date().toISOString(),
+      userId: currentUser.id,
+      userName: currentUser.name,
+      userRole: currentUser.role.toUpperCase(),
+      ...entry
+    };
+    setAuditLogs(prev => [newLog, ...prev]);
+  };
+
+  // Add Complaint (Enforced: management cannot register)
+  const addComplaint = (draft: any): Complaint | null => {
+    if (!hasPermission('create_complaint')) {
+      addAuditLogEntry({
+        action: 'Access Denied: Create Complaint',
+        entityType: 'Complaint',
+        entityId: 'UNAUTHORIZED_ATTEMPT',
+        details: `User ${currentUser.name} (${currentUser.role}) attempted to register complaint without sufficient permissions.`
+      });
+      return null;
+    }
+
+    const nextSeq = complaints.length + 101;
+    const newId = `AICTE-2026-COMP-${nextSeq}`;
+    const today = '2026-10-23';
+
+    // Calculate deadline based on priority if not set
+    let deadline = draft.deadlineDate;
+    if (!deadline) {
+      const days = draft.priority === 'Urgent' ? settings.defaultDeadlineUrgent : settings.defaultDeadlineNormal;
+      const d = new Date(today);
+      d.setDate(d.getDate() + days);
+      deadline = d.toISOString().split('T')[0];
+    }
+
+    const bureau = bureaus.find(b => b.id === draft.bureauId) || bureaus[0];
+
+    const newComplaint: Complaint = {
+      id: newId,
+      title: draft.title,
+      description: draft.description,
+      institutionId: draft.institutionId,
+      institutionCode: draft.institutionCode,
+      institutionName: draft.institutionName,
+      category: draft.category,
+      status: 'Open',
+      priority: draft.priority || 'Normal',
+      bureauId: bureau.id,
+      bureauName: bureau.name,
+      assignedOfficerId: draft.assignedOfficerId || 'USR-OFFICER-01',
+      assignedOfficerName: draft.assignedOfficerName || bureau.officerInCharge,
+      submissionDate: draft.submissionDate || today,
+      deadlineDate: deadline,
+      lastUpdatedDate: today,
+      sourceChannel: draft.sourceChannel || 'Online Portal',
+      referenceNumber: draft.referenceNumber || `REG-DEMO-${Date.now().toString().slice(-4)}`,
+      tags: draft.tags || ['new-filing', draft.category.toLowerCase().split(' ')[0]]
+    };
+
+    setComplaints(prev => [newComplaint, ...prev]);
+
+    // Initial timeline event
+    const initialEvent: TimelineEvent = {
+      id: `EVT-${newId}-REG`,
+      complaintId: newId,
+      timestamp: new Date().toISOString(),
+      type: 'REGISTERED',
+      title: 'Complaint Formally Registered',
+      description: `Logged in AICTE CaseTrack under category "${newComplaint.category}". Assigned to ${newComplaint.bureauName}.`,
+      actorName: currentUser.name,
+      actorRole: currentUser.role.toUpperCase()
+    };
+    setTimelineEvents(prev => ({
+      ...prev,
+      [newId]: [initialEvent]
+    }));
+
+    // Audit log
+    addAuditLogEntry({
+      action: 'Complaint Registered',
+      entityType: 'Complaint',
+      entityId: newId,
+      details: `New complaint filed for ${newComplaint.institutionName} (${newComplaint.title.slice(0, 50)}...)`,
+      newValue: 'Status: Open'
+    });
+
+    // Automatically check for related cases and create suggestions if above threshold
+    complaints.forEach(existing => {
+      const match = calculateRelatedness(newComplaint, existing);
+      if (match.overallScore >= settings.similarityThreshold) {
+        const newSuggestion: RelatedCaseSuggestion = {
+          id: `SUGG-${Date.now().toString().slice(-5)}-${Math.floor(Math.random() * 100)}`,
+          complaintId: newId,
+          relatedComplaintId: existing.id,
+          institutionMatchScore: match.institutionMatchScore,
+          categoryMatchScore: match.categoryMatchScore,
+          textSimilarityScore: match.textSimilarityScore,
+          overallScore: match.overallScore,
+          matchSignals: match.matchSignals,
+          explanation: match.explanation,
+          status: 'Pending Review'
+        };
+        setRelatedSuggestions(prev => [newSuggestion, ...prev]);
+      }
+    });
+
+    return newComplaint;
+  };
+
+  // Update Status (Enforced: management cannot mutate status)
+  const updateComplaintStatus = (id: string, newStatus: ComplaintStatus, reason: string): boolean => {
+    if (!hasPermission('change_status')) {
+      addAuditLogEntry({
+        action: 'Access Denied: Status Transition',
+        entityType: 'Status',
+        entityId: id,
+        details: `Unauthorized attempt to alter status to ${newStatus} by user ${currentUser.name} (${currentUser.role}).`
+      });
+      return false;
+    }
+
+    const target = complaints.find(c => c.id === id);
+    if (!target) return false;
+
+    const prevStatus = target.status;
+    const today = '2026-10-23';
+
+    setComplaints(prev =>
+      prev.map(c => {
+        if (c.id === id) {
+          const updated: Complaint = {
+            ...c,
+            status: newStatus,
+            lastUpdatedDate: today,
+            resolvedDate: (newStatus === 'Resolved' || newStatus === 'Closed') ? today : c.resolvedDate,
+            resolutionSummary: (newStatus === 'Resolved' || newStatus === 'Closed') ? reason : c.resolutionSummary
+          };
+          return updated;
+        }
+        return c;
+      })
+    );
+
+    // Timeline event
+    const eventType =
+      newStatus === 'Resolved' ? 'RESOLVED' :
+      newStatus === 'Escalated' ? 'ESCALATED' : 'STATUS_CHANGED';
+
+    const newEvent: TimelineEvent = {
+      id: `EVT-${id}-${Date.now().toString().slice(-5)}`,
+      complaintId: id,
+      timestamp: new Date().toISOString(),
+      type: eventType,
+      title: `Status Changed: ${prevStatus} -> ${newStatus}`,
+      description: reason || `Updated to ${newStatus} by ${currentUser.name}`,
+      actorName: currentUser.name,
+      actorRole: currentUser.role.toUpperCase()
+    };
+
+    setTimelineEvents(prev => ({
+      ...prev,
+      [id]: [...(prev[id] || []), newEvent]
+    }));
+
+    // Audit Log
+    addAuditLogEntry({
+      action: 'Status Transition',
+      entityType: 'Status',
+      entityId: id,
+      details: `Status altered from ${prevStatus} to ${newStatus}. Reason: ${reason}`,
+      previousValue: prevStatus,
+      newValue: newStatus
+    });
+
+    return true;
+  };
+
+  // Update Verification Status (Scrutiny Staff & Admin)
+  const updateVerificationStatus = (
+    id: string,
+    status: 'Verified' | 'Pending' | 'Needs Information' | 'Flagged',
+    remarks: string
+  ): boolean => {
+    if (!hasPermission('verify_case')) {
+      addAuditLogEntry({
+        action: 'Access Denied: Verification',
+        entityType: 'Status',
+        entityId: id,
+        details: `Unauthorized attempt to verify complaint by user ${currentUser.name} (${currentUser.role}).`
+      });
+      return false;
+    }
+
+    setComplaints(prev =>
+      prev.map(c => {
+        if (c.id === id) {
+          const updatedStage = status === 'Verified' ? 3 : status === 'Needs Information' ? 5 : c.currentStageId;
+          const updatedStatus = status === 'Needs Information' ? 'Awaiting Information' : c.status;
+          return {
+            ...c,
+            verificationStatus: status,
+            verificationRemarks: remarks,
+            lastUpdatedDate: '2026-10-23',
+            currentStageId: updatedStage,
+            status: updatedStatus
+          };
+        }
+        return c;
+      })
+    );
+
+    addAuditLogEntry({
+      action: `Verification: ${status}`,
+      entityType: 'Status',
+      entityId: id,
+      details: `Scrutiny Staff ${currentUser.name} updated verification state to "${status}". Remarks: ${remarks}`,
+      newValue: status
+    });
+
+    // Add Timeline Event
+    const verifyEvent: TimelineEvent = {
+      id: `EVT-${id}-VERIFY-${Date.now().toString().slice(-4)}`,
+      complaintId: id,
+      timestamp: new Date().toISOString(),
+      type: 'NOTE_ADDED',
+      title: `Verification Assessment: ${status}`,
+      description: remarks || `Preliminary document verification updated to ${status}.`,
+      actorName: currentUser.name,
+      actorRole: currentUser.role.toUpperCase()
+    };
+
+    setTimelineEvents(prev => ({
+      ...prev,
+      [id]: [...(prev[id] || []), verifyEvent]
+    }));
+
+    return true;
+  };
+
+  // Approve Closure (Supervisor & Admin)
+  const approveCaseClosure = (
+    id: string,
+    approved: boolean,
+    remarks: string
+  ): boolean => {
+    if (!hasPermission('approve_closure')) {
+      addAuditLogEntry({
+        action: 'Access Denied: Case Closure Approval',
+        entityType: 'Status',
+        entityId: id,
+        details: `Unauthorized closure approval attempt by ${currentUser.name} (${currentUser.role}).`
+      });
+      return false;
+    }
+
+    const today = '2026-10-23';
+
+    setComplaints(prev =>
+      prev.map(c => {
+        if (c.id === id) {
+          return {
+            ...c,
+            status: approved ? 'Closed' : 'Under Review',
+            currentStageId: approved ? 7 : 4,
+            resolvedDate: approved ? (c.resolvedDate || today) : undefined,
+            closureApprovedBy: currentUser.name,
+            closureApprovedAt: new Date().toISOString(),
+            lastUpdatedDate: today,
+            resolutionSummary: approved ? remarks : c.resolutionSummary
+          };
+        }
+        return c;
+      })
+    );
+
+    addAuditLogEntry({
+      action: approved ? 'Complaint Closure Approved' : 'Closure Remanded to Bureau Review',
+      entityType: 'Status',
+      entityId: id,
+      details: `Supervisor ${currentUser.name} ${approved ? 'approved formal complaint closure' : 'rejected closure recommendation and returned case for further inquiry'}. Notes: ${remarks}`,
+      newValue: approved ? 'Closed' : 'Under Review'
+    });
+
+    const closureEvent: TimelineEvent = {
+      id: `EVT-${id}-CLOSURE-${Date.now().toString().slice(-4)}`,
+      complaintId: id,
+      timestamp: new Date().toISOString(),
+      type: approved ? 'RESOLVED' : 'STATUS_CHANGED',
+      title: approved ? 'Final Case Closure Approved' : 'Closure Remanded for Further Inquiry',
+      description: remarks,
+      actorName: currentUser.name,
+      actorRole: currentUser.role.toUpperCase()
+    };
+
+    setTimelineEvents(prev => ({
+      ...prev,
+      [id]: [...(prev[id] || []), closureEvent]
+    }));
+
+    return true;
+  };
+
+  // Request Information from Complainant (Officer, Verification, Supervisor)
+  const requestComplainantInfo = (id: string, query: string): boolean => {
+    const today = '2026-10-23';
+    setComplaints(prev =>
+      prev.map(c => {
+        if (c.id === id) {
+          return {
+            ...c,
+            status: 'Awaiting Information',
+            currentStageId: 5,
+            lastUpdatedDate: today
+          };
+        }
+        return c;
+      })
+    );
+
+    addAuditLogEntry({
+      action: 'Information Requested from Complainant',
+      entityType: 'Status',
+      entityId: id,
+      details: `Official inquiry sent to complainant by ${currentUser.name}: ${query}`,
+      newValue: 'Awaiting Information'
+    });
+
+    const queryEvent: TimelineEvent = {
+      id: `EVT-${id}-REQINFO-${Date.now().toString().slice(-4)}`,
+      complaintId: id,
+      timestamp: new Date().toISOString(),
+      type: 'NOTE_ADDED',
+      title: 'Clarification Requested from Complainant',
+      description: query,
+      actorName: currentUser.name,
+      actorRole: currentUser.role.toUpperCase()
+    };
+
+    setTimelineEvents(prev => ({
+      ...prev,
+      [id]: [...(prev[id] || []), queryEvent]
+    }));
+
+    return true;
+  };
+
+  // Assign Case (Enforced: only admin and supervisor can reassign)
+  const assignComplaint = (id: string, bureauId: string, officerId: string, notesText?: string): boolean => {
+    if (!hasPermission('assign_case')) {
+      addAuditLogEntry({
+        action: 'Access Denied: Case Reassignment',
+        entityType: 'Assignment',
+        entityId: id,
+        details: `Unauthorized attempt to reassign bureau by user ${currentUser.name} (${currentUser.role}).`
+      });
+      return false;
+    }
+
+    const target = complaints.find(c => c.id === id);
+    if (!target) return false;
+
+    const bureau = bureaus.find(b => b.id === bureauId) || bureaus[0];
+    const prevBureau = target.bureauName;
+    const prevOfficer = target.assignedOfficerName;
+    const officerName = bureau.officerInCharge;
+
+    setComplaints(prev =>
+      prev.map(c => {
+        if (c.id === id) {
+          return {
+            ...c,
+            bureauId,
+            bureauName: bureau.name,
+            assignedOfficerId: officerId,
+            assignedOfficerName: officerName,
+            lastUpdatedDate: '2026-10-23'
+          };
+        }
+        return c;
+      })
+    );
+
+    // Timeline event
+    const newEvent: TimelineEvent = {
+      id: `EVT-${id}-${Date.now().toString().slice(-5)}`,
+      complaintId: id,
+      timestamp: new Date().toISOString(),
+      type: 'ASSIGNED',
+      title: `Reassigned to ${bureau.shortName}`,
+      description: `Reallocated to Officer ${officerName}. Note: ${notesText || 'Administrative reallocation'}`,
+      actorName: currentUser.name,
+      actorRole: currentUser.role.toUpperCase()
+    };
+
+    setTimelineEvents(prev => ({
+      ...prev,
+      [id]: [...(prev[id] || []), newEvent]
+    }));
+
+    // Audit log
+    addAuditLogEntry({
+      action: 'Case Reassigned',
+      entityType: 'Assignment',
+      entityId: id,
+      details: `Reassigned from ${prevBureau} (${prevOfficer}) to ${bureau.name} (${officerName})`,
+      previousValue: `${prevBureau} / ${prevOfficer}`,
+      newValue: `${bureau.name} / ${officerName}`
+    });
+
+    return true;
+  };
+
+  // Edit permitted fields
+  const editComplaint = (id: string, updates: Partial<Complaint>): boolean => {
+    if (!hasPermission('edit_case')) {
+      addAuditLogEntry({
+        action: 'Access Denied: Edit Complaint',
+        entityType: 'Complaint',
+        entityId: id,
+        details: `Unauthorized attempt to edit complaint by user ${currentUser.name} (${currentUser.role}).`
+      });
+      return false;
+    }
+
+    setComplaints(prev =>
+      prev.map(c => (c.id === id ? { ...c, ...updates, lastUpdatedDate: '2026-10-23' } : c))
+    );
+
+    addAuditLogEntry({
+      action: 'Case Record Edited',
+      entityType: 'Complaint',
+      entityId: id,
+      details: `Updated fields: ${Object.keys(updates).join(', ')}`
+    });
+
+    return true;
+  };
+
+  // Add Follow-up Note (Enforced: management cannot add notes)
+  const addNote = (complaintId: string, content: string, actionItem?: string, isOfficialAction: boolean = true): boolean => {
+    if (currentUser.role === 'management') {
+      addAuditLogEntry({
+        action: 'Access Denied: Add Note',
+        entityType: 'Complaint',
+        entityId: complaintId,
+        details: `Read-only user ${currentUser.name} attempted to add case follow-up note.`
+      });
+      return false;
+    }
+
+    const newNote: ComplaintNote = {
+      id: `NOTE-${complaintId}-${Date.now().toString().slice(-4)}`,
+      complaintId,
+      timestamp: new Date().toISOString(),
+      authorId: currentUser.id,
+      authorName: currentUser.name,
+      authorRole: currentUser.role.toUpperCase(),
+      content,
+      actionItem,
+      isOfficialAction
+    };
+
+    setNotes(prev => ({
+      ...prev,
+      [complaintId]: [...(prev[complaintId] || []), newNote]
+    }));
+
+    // Timeline entry
+    const newEvent: TimelineEvent = {
+      id: `EVT-${complaintId}-${Date.now().toString().slice(-5)}`,
+      complaintId,
+      timestamp: new Date().toISOString(),
+      type: 'NOTE_ADDED',
+      title: 'Follow-up Note Added',
+      description: content.length > 80 ? `${content.slice(0, 80)}...` : content,
+      actorName: currentUser.name,
+      actorRole: currentUser.role.toUpperCase()
+    };
+
+    setTimelineEvents(prev => ({
+      ...prev,
+      [complaintId]: [...(prev[complaintId] || []), newEvent]
+    }));
+
+    // Audit
+    addAuditLogEntry({
+      action: 'Note Recorded',
+      entityType: 'Complaint',
+      entityId: complaintId,
+      details: `Added note: "${content.slice(0, 60)}..."`
+    });
+
+    return true;
+  };
+
+  // Confirm Related Case (Enforced: only admin, officer, supervisor)
+  const confirmRelationship = (suggestionId: string, reviewNotes?: string): boolean => {
+    if (!hasPermission('review_related')) {
+      addAuditLogEntry({
+        action: 'Access Denied: Confirm Relationship',
+        entityType: 'RelatedCase',
+        entityId: suggestionId,
+        details: `User ${currentUser.name} (${currentUser.role}) attempted to confirm relationship without authorization.`
+      });
+      return false;
+    }
+
+    const target = relatedSuggestions.find(s => s.id === suggestionId);
+    if (!target) return false;
+
+    setRelatedSuggestions(prev =>
+      prev.map(s =>
+        s.id === suggestionId
+          ? {
+              ...s,
+              status: 'Confirmed Related',
+              reviewedBy: `${currentUser.name} (${currentUser.role.toUpperCase()})`,
+              reviewedAt: new Date().toISOString(),
+              reviewNotes: reviewNotes || 'Relationship confirmed by authorized officer.'
+            }
+          : s
+      )
+    );
+
+    // Add timeline entries to BOTH cases without merging
+    const evtA: TimelineEvent = {
+      id: `EVT-${target.complaintId}-${Date.now().toString().slice(-5)}`,
+      complaintId: target.complaintId,
+      timestamp: new Date().toISOString(),
+      type: 'RELATIONSHIP_CONFIRMED',
+      title: `Related Case Confirmed: ${target.relatedComplaintId}`,
+      description: `Officer confirmed similarity score of ${target.overallScore}%. ${reviewNotes || ''}`,
+      actorName: currentUser.name,
+      actorRole: currentUser.role.toUpperCase()
+    };
+
+    const evtB: TimelineEvent = {
+      id: `EVT-${target.relatedComplaintId}-${Date.now().toString().slice(-5)}`,
+      complaintId: target.relatedComplaintId,
+      timestamp: new Date().toISOString(),
+      type: 'RELATIONSHIP_CONFIRMED',
+      title: `Related Case Confirmed: ${target.complaintId}`,
+      description: `Cross-linked as related file by ${currentUser.name}.`,
+      actorName: currentUser.name,
+      actorRole: currentUser.role.toUpperCase()
+    };
+
+    setTimelineEvents(prev => ({
+      ...prev,
+      [target.complaintId]: [...(prev[target.complaintId] || []), evtA],
+      [target.relatedComplaintId]: [...(prev[target.relatedComplaintId] || []), evtB]
+    }));
+
+    // Audit
+    addAuditLogEntry({
+      action: 'Related Case Confirmed',
+      entityType: 'RelatedCase',
+      entityId: target.complaintId,
+      details: `Confirmed relationship between ${target.complaintId} and ${target.relatedComplaintId} (${target.overallScore}%)`,
+      previousValue: 'Pending Review',
+      newValue: 'Confirmed Related'
+    });
+
+    return true;
+  };
+
+  // Reject / Mark Unrelated (Enforced)
+  const rejectRelationship = (suggestionId: string, reviewNotes?: string): boolean => {
+    if (!hasPermission('review_related')) {
+      addAuditLogEntry({
+        action: 'Access Denied: Reject Relationship',
+        entityType: 'RelatedCase',
+        entityId: suggestionId,
+        details: `User ${currentUser.name} (${currentUser.role}) attempted to reject relationship without authorization.`
+      });
+      return false;
+    }
+
+    const target = relatedSuggestions.find(s => s.id === suggestionId);
+    if (!target) return false;
+
+    setRelatedSuggestions(prev =>
+      prev.map(s =>
+        s.id === suggestionId
+          ? {
+              ...s,
+              status: 'Marked Unrelated',
+              reviewedBy: `${currentUser.name} (${currentUser.role.toUpperCase()})`,
+              reviewedAt: new Date().toISOString(),
+              reviewNotes: reviewNotes || 'Officer reviewed and determined complaints are independent.'
+            }
+          : s
+      )
+    );
+
+    addAuditLogEntry({
+      action: 'Related Case Marked Unrelated',
+      entityType: 'RelatedCase',
+      entityId: target.complaintId,
+      details: `Officer concluded ${target.complaintId} and ${target.relatedComplaintId} are distinct matters.`,
+      previousValue: 'Pending Review',
+      newValue: 'Marked Unrelated'
+    });
+
+    return true;
+  };
+
+  // Mark Alert Reviewed
+  const markAlertReviewed = (alertId: string) => {
+    if (currentUser.role === 'management') {
+      addAuditLogEntry({
+        action: 'Access Denied: Alert Acknowledgment',
+        entityType: 'Complaint',
+        entityId: alertId,
+        details: `Read-only user ${currentUser.name} cannot acknowledge alerts.`
+      });
+      return;
+    }
+
+    if (!reviewedAlertIds.includes(alertId)) {
+      const updated = [...reviewedAlertIds, alertId];
+      setReviewedAlertIds(updated);
+
+      addAuditLogEntry({
+        action: 'Alert Acknowledged',
+        entityType: 'Complaint',
+        entityId: alertId,
+        details: `Deadline alert for case ${alertId} reviewed and marked acknowledged by officer.`
+      });
+    }
+  };
+
+  // Update Settings (Enforced: only admin)
+  const updateSettings = (newSettings: Partial<SystemSettings>): boolean => {
+    if (!hasPermission('manage_settings')) {
+      addAuditLogEntry({
+        action: 'Access Denied: Update System Settings',
+        entityType: 'SystemSettings',
+        entityId: 'SYSTEM-CONFIG',
+        details: `Unauthorized attempt to alter system settings by ${currentUser.name} (${currentUser.role}).`
+      });
+      return false;
+    }
+
+    setSettings(prev => ({ ...prev, ...newSettings }));
+    addAuditLogEntry({
+      action: 'System Settings Updated',
+      entityType: 'SystemSettings',
+      entityId: 'SYSTEM-CONFIG',
+      details: `Updated parameters: ${Object.keys(newSettings).join(', ')}`
+    });
+
+    return true;
+  };
+
+  // Reset demo data
+  const resetDemoData = () => {
+    localStorage.removeItem(`${STORAGE_KEY_PREFIX}complaints`);
+    localStorage.removeItem(`${STORAGE_KEY_PREFIX}timeline`);
+    localStorage.removeItem(`${STORAGE_KEY_PREFIX}notes`);
+    localStorage.removeItem(`${STORAGE_KEY_PREFIX}suggestions`);
+    localStorage.removeItem(`${STORAGE_KEY_PREFIX}audit`);
+    localStorage.removeItem(`${STORAGE_KEY_PREFIX}reviewed_alerts`);
+    localStorage.removeItem(`${STORAGE_KEY_PREFIX}settings`);
+    localStorage.removeItem(`${STORAGE_KEY_PREFIX}user_role`);
+    localStorage.removeItem(`${STORAGE_KEY_PREFIX}milestones`);
+
+    setComplaints(INITIAL_COMPLAINTS);
+    setTimelineEvents(INITIAL_TIMELINE_EVENTS);
+    setNotes(INITIAL_NOTES);
+    setRelatedSuggestions(INITIAL_RELATED_SUGGESTIONS);
+    setAuditLogs(INITIAL_AUDIT_LOGS);
+    setReviewedAlertIds([]);
+    setSettings(INITIAL_SYSTEM_SETTINGS);
+    setMilestones(INITIAL_PROJECT_MILESTONES);
+    setCurrentUser(INITIAL_USERS[0]);
+  };
+
+  return (
+    <CaseTrackContext.Provider
+      value={{
+        currentUser,
+        switchUserRole,
+        institutions,
+        bureaus,
+        complaints,
+        timelineEvents,
+        notes,
+        relatedSuggestions,
+        auditLogs,
+        settings,
+        reviewedAlertIds,
+        milestones,
+        lifecycleStages,
+        updateMilestoneStatus,
+        addComplaint,
+        updateComplaintStatus,
+        updateVerificationStatus,
+        approveCaseClosure,
+        requestComplainantInfo,
+        assignComplaint,
+        editComplaint,
+        addNote,
+        confirmRelationship,
+        rejectRelationship,
+        markAlertReviewed,
+        updateSettings,
+        resetDemoData,
+        hasPermission
+      }}
+    >
+      {children}
+    </CaseTrackContext.Provider>
+  );
+};
+
+export const useCaseTrack = () => {
+  const context = useContext(CaseTrackContext);
+  if (!context) {
+    throw new Error('useCaseTrack must be used within a CaseTrackProvider');
+  }
+  return context;
+};
