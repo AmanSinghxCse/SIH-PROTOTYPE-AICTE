@@ -30,6 +30,9 @@ import { OfficialsLoginPage } from './pages/auth/OfficialsLoginPage';
 import { PublicDashboardPage } from './pages/dashboards/PublicDashboardPage';
 import { AdminDashboardPage } from './pages/dashboards/AdminDashboardPage';
 import { GovernmentOfficialsDashboardPage } from './pages/dashboards/GovernmentOfficialsDashboardPage';
+import { VerificationDashboardPage } from './pages/dashboards/VerificationDashboardPage';
+import { SupervisorDashboardPage } from './pages/dashboards/SupervisorDashboardPage';
+import { ManagementDashboardPage } from './pages/dashboards/ManagementDashboardPage';
 
 // Dedicated "How It Works" Pages (Administration & Government Officials)
 import { AdminHowItWorksPage } from './pages/help/AdminHowItWorksPage';
@@ -100,13 +103,38 @@ export const App: React.FC = () => {
               }
             />
 
-            {/* Former Bureau Officer Route Permanently Redirects to Government Officials Portal */}
+            {/* Former Bureau Officer Route Redirects to Government Officials Portal */}
             <Route path="/portal/officer" element={<Navigate to="/portal/officials" replace />} />
 
-            {/* Legacy Portal Route Redirects to Government Officials Portal */}
-            <Route path="/portal/verification" element={<Navigate to="/portal/officials" replace />} />
-            <Route path="/portal/supervisor" element={<Navigate to="/portal/officials" replace />} />
-            <Route path="/portal/management" element={<Navigate to="/portal/officials" replace />} />
+            {/* D. Verification Staff Portal */}
+            <Route
+              path="/portal/verification"
+              element={
+                <ProtectedRoute allowedRoles={['admin', 'verification']}>
+                  <VerificationDashboardPage />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* E. Supervisor Portal */}
+            <Route
+              path="/portal/supervisor"
+              element={
+                <ProtectedRoute allowedRoles={['admin', 'supervisor']}>
+                  <SupervisorDashboardPage />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* F. Management User Portal */}
+            <Route
+              path="/portal/management"
+              element={
+                <ProtectedRoute allowedRoles={['admin', 'management']}>
+                  <ManagementDashboardPage />
+                </ProtectedRoute>
+              }
+            />
 
             {/* 4. Public Complaint Filing & Case Inspection */}
             <Route path="/register" element={<NewComplaintPage />} />

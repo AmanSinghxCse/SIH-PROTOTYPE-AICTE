@@ -252,6 +252,73 @@ export const PortalSelectPage: React.FC = () => {
         })}
       </div>
 
+      {/* Specialized Role Portals Strip */}
+      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 max-w-7xl mx-auto space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 pb-2">
+          <div>
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+              Additional Specialized Statutory Portals
+            </span>
+            <p className="text-xs text-slate-600">
+              Direct access for Scrutiny Officers, Appellate Supervisors, and Council Executive Observers:
+            </p>
+          </div>
+          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-800 self-start">
+            All 6 Portals Active
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+          <button
+            type="button"
+            onClick={() => navigate('/portal/verification')}
+            className="p-3 bg-white border border-slate-200 hover:border-[#0B477F] rounded-xl text-left transition flex items-center justify-between group shadow-2xs"
+          >
+            <div>
+              <div className="font-bold text-xs text-slate-800 group-hover:text-[#0B477F]">
+                4. Verification Staff Portal
+              </div>
+              <div className="text-[11px] text-slate-500">
+                Prima facie scrutiny & evidence intake
+              </div>
+            </div>
+            <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-[#0B477F] shrink-0" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => navigate('/portal/supervisor')}
+            className="p-3 bg-white border border-slate-200 hover:border-[#0B477F] rounded-xl text-left transition flex items-center justify-between group shadow-2xs"
+          >
+            <div>
+              <div className="font-bold text-xs text-slate-800 group-hover:text-[#0B477F]">
+                5. Bureau Supervisor Portal
+              </div>
+              <div className="text-[11px] text-slate-500">
+                Workload allocation & closure review
+              </div>
+            </div>
+            <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-[#0B477F] shrink-0" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => navigate('/portal/management')}
+            className="p-3 bg-white border border-slate-200 hover:border-[#0B477F] rounded-xl text-left transition flex items-center justify-between group shadow-2xs"
+          >
+            <div>
+              <div className="font-bold text-xs text-slate-800 group-hover:text-[#0B477F]">
+                6. Executive Management Portal
+              </div>
+              <div className="text-[11px] text-slate-500">
+                Council oversight & compliance trends
+              </div>
+            </div>
+            <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-[#0B477F] shrink-0" />
+          </button>
+        </div>
+      </div>
+
       {/* Security and RBAC Notice Bar */}
       <div className="bg-white rounded-xl border border-[#D6E4F0] p-6 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4 max-w-5xl mx-auto">
         <div className="flex items-center gap-3">
