@@ -26,20 +26,38 @@ export const INITIAL_USERS: User[] = [
     name: 'Shri Arvind Saxena',
     email: 'admin.saxena@aicte-demo.gov.in',
     role: 'admin',
-    designation: 'Senior System Administrator & Nodal Incharge',
+    designation: 'Senior System Administrator & National Nodal Incharge',
     bureauId: 'BUR-GRV',
     bureauName: 'Grievance Redressal Cell',
-    password: 'Admin@AICTE2026'
+    password: 'Admin@AICTE2026',
+    jurisdiction: 'National',
+    assignedState: 'All States'
   },
   {
     id: 'USR-OFFICER-01',
     name: 'Smt. Sunita Verma',
     email: 'sverma.officer@aicte-demo.gov.in',
     role: 'bureau_officer',
-    designation: 'Assistant Director / Bureau Grievance Officer',
+    designation: 'State Nodal Officer - Maharashtra (Directorate of Technical Education)',
     bureauId: 'BUR-GRV',
     bureauName: 'Grievance Redressal Cell',
-    password: 'Officer@AICTE2026'
+    password: 'Officer@AICTE2026',
+    assignedState: 'Maharashtra',
+    assignedDistrict: 'Pune',
+    jurisdiction: 'State'
+  },
+  {
+    id: 'USR-OFFICER-02',
+    name: 'Dr. K. S. Raman',
+    email: 'ks.raman@karnataka-dte.gov.in',
+    role: 'bureau_officer',
+    designation: 'State Grievance Nodal Officer - Karnataka (DTE)',
+    bureauId: 'BUR-GRV',
+    bureauName: 'Grievance Redressal Cell',
+    password: 'Officer@AICTE2026',
+    assignedState: 'Karnataka',
+    assignedDistrict: 'Bengaluru Urban',
+    jurisdiction: 'State'
   },
   {
     id: 'USR-VERIFY-01',

@@ -20,6 +20,9 @@ export interface User {
   avatarUrl?: string;
   phone?: string;
   password?: string;
+  assignedState?: string;       // State assigned for State Government Officials (e.g. 'Maharashtra')
+  assignedDistrict?: string;    // Optional district assigned
+  jurisdiction?: 'State' | 'National' | 'District';
 }
 
 export type ComplaintStatus =

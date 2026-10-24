@@ -409,8 +409,12 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenGuidedTour }) => {
                   </div>
                   <div className="hidden sm:block">
                     <div className="text-xs font-bold text-[#17324D] line-clamp-1 leading-tight">{currentUser.name}</div>
-                    <div className="text-[10px] text-[#155A91] font-semibold uppercase tracking-wider">
-                      {currentUser.role === 'admin' ? 'ADMINISTRATOR' : 'BUREAU OFFICER'}
+                    <div className="text-[10px] text-[#155A91] font-semibold uppercase tracking-wider truncate max-w-[130px]">
+                      {currentUser.role === 'admin'
+                        ? 'ADMINISTRATOR'
+                        : currentUser.assignedState
+                        ? `${currentUser.assignedState} Official`
+                        : 'State Official'}
                     </div>
                   </div>
                   <ChevronDown className="w-3.5 h-3.5 text-[#53677D]" />

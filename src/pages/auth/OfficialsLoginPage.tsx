@@ -54,6 +54,12 @@ export const OfficialsLoginPage: React.FC = () => {
     setErrorMessage(null);
   };
 
+  const handleFillDemoKarnataka = () => {
+    setEmail('ks.raman@karnataka-dte.gov.in');
+    setPassword('Officer@AICTE2026');
+    setErrorMessage(null);
+  };
+
   const handleFillDemoAdmin = () => {
     setEmail('admin.saxena@aicte-demo.gov.in');
     setPassword('Admin@AICTE2026');
@@ -118,10 +124,28 @@ export const OfficialsLoginPage: React.FC = () => {
                   >
                     <div>
                       <div className="font-bold text-slate-800 group-hover:text-[#0B477F]">
-                        Smt. Sunita Verma (Desk Grievance Officer)
+                        Smt. Sunita Verma (State Nodal Officer - Maharashtra)
                       </div>
                       <div className="text-[10px] text-slate-500 font-mono">
-                        sverma.officer@aicte-demo.gov.in
+                        sverma.officer@aicte-demo.gov.in • Pune / Maharashtra DTE
+                      </div>
+                    </div>
+                    <span className="text-[11px] font-bold text-[#0B477F] bg-blue-50 px-2 py-0.5 rounded">
+                      Autofill
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleFillDemoKarnataka}
+                    className="w-full text-left p-2.5 bg-white border border-slate-200 hover:border-[#0B477F] rounded-lg transition-all flex items-center justify-between text-xs group"
+                  >
+                    <div>
+                      <div className="font-bold text-slate-800 group-hover:text-[#0B477F]">
+                        Dr. K. S. Raman (State Nodal Officer - Karnataka)
+                      </div>
+                      <div className="text-[10px] text-slate-500 font-mono">
+                        ks.raman@karnataka-dte.gov.in • Bengaluru / Karnataka DTE
                       </div>
                     </div>
                     <span className="text-[11px] font-bold text-[#0B477F] bg-blue-50 px-2 py-0.5 rounded">
@@ -136,10 +160,10 @@ export const OfficialsLoginPage: React.FC = () => {
                   >
                     <div>
                       <div className="font-bold text-slate-800 group-hover:text-[#0B477F]">
-                        Shri Arvind Saxena (Senior Administrator)
+                        Shri Arvind Saxena (National Coordination Officer)
                       </div>
                       <div className="text-[10px] text-slate-500 font-mono">
-                        admin.saxena@aicte-demo.gov.in
+                        admin.saxena@aicte-demo.gov.in • All States Jurisdiction
                       </div>
                     </div>
                     <span className="text-[11px] font-bold text-[#0B477F] bg-blue-50 px-2 py-0.5 rounded">
