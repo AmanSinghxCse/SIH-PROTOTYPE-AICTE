@@ -113,14 +113,35 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenGuidedTour }) => {
       ];
     }
 
-    // Consolidated Government Officials Portal Navigation
+    // Dynamic navigation items based on active role & auth
+    if (!isAuthenticated || !currentUser) {
+      return [
+        { to: '/', label: 'Home', icon: Home },
+        { to: '/register', label: 'Register Complaint', icon: PlusCircle },
+        { to: '/portal/public', label: 'Track Complaint', icon: Search },
+        { to: '/help', label: 'Help', icon: HelpCircle }
+      ];
+    }
+
+    if (currentUser.role === 'admin') {
+      return [
+        { to: '/portal/admin', label: 'Admin Command', icon: LayoutDashboard },
+        { to: '/registry', label: 'Complaint Registry', icon: FileText, badge: complaints.length },
+        { to: '/institutions', label: 'Institutions', icon: Building2 },
+        { to: '/analytics', label: 'Reports & Analytics', icon: BarChart3 },
+        { to: '/alerts', label: 'SLA Alerts', icon: AlertTriangle, badge: totalAlertCount > 0 ? totalAlertCount : undefined },
+        { to: '/audit', label: 'Audit History', icon: FileCheck2 },
+        { to: '/admin/how-it-works', label: 'How It Works', icon: HelpCircle }
+      ];
+    }
+
+    // Government Officials (Bureau Officers) Navigation
     return [
-      { to: '/portal/admin', label: 'Command Center', icon: LayoutDashboard },
-      { to: '/registry', label: 'Complaint Registry', icon: FileText, badge: complaints.length },
+      { to: '/portal/officials', label: 'Officials Desk', icon: LayoutDashboard },
+      { to: '/registry', label: 'Case Registry', icon: FileText, badge: complaints.length },
       { to: '/institutions', label: 'Institutions', icon: Building2 },
-      { to: '/analytics', label: 'Reports & Analytics', icon: BarChart3 },
       { to: '/alerts', label: 'SLA Alerts', icon: AlertTriangle, badge: totalAlertCount > 0 ? totalAlertCount : undefined },
-      { to: '/audit', label: 'Audit History', icon: FileCheck2 }
+      { to: '/officials/how-it-works', label: 'How It Works', icon: HelpCircle }
     ];
   };
 
@@ -401,20 +422,39 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenGuidedTour }) => {
                       <div className="text-xs font-bold text-[#17324D]">{currentUser.name}</div>
                       <div className="text-[11px] text-[#53677D] truncate">{currentUser.email}</div>
                       <div className="text-[10px] font-semibold text-[#0B477F] mt-1 uppercase">
-                        Government Officials Portal
+                        {currentUser.role === 'admin' ? 'Administration Portal' : 'Government Officials Portal'}
                       </div>
                     </div>
 
                     <div className="p-2 space-y-1">
                       <button
                         onClick={() => {
-                          navigate('/portal/admin');
+                          if (currentUser.role === 'admin') {
+                            navigate('/portal/admin');
+                          } else {
+                            navigate('/portal/officials');
+                          }
                           setIsRoleDropdownOpen(false);
                         }}
                         className="w-full text-left p-2 rounded-lg hover:bg-[#F1F7FC] text-xs font-medium text-[#17324D] flex items-center gap-2"
                       >
                         <LayoutDashboard className="w-4 h-4 text-[#0B477F]" />
-                        <span>Command Center</span>
+                        <span>{currentUser.role === 'admin' ? 'Administration Command' : 'Officials Workspace'}</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          if (currentUser.role === 'admin') {
+                            navigate('/admin/how-it-works');
+                          } else {
+                            navigate('/officials/how-it-works');
+                          }
+                          setIsRoleDropdownOpen(false);
+                        }}
+                        className="w-full text-left p-2 rounded-lg hover:bg-[#F1F7FC] text-xs font-medium text-[#17324D] flex items-center gap-2"
+                      >
+                        <HelpCircle className="w-4 h-4 text-[#0B477F]" />
+                        <span>How It Works Guide</span>
                       </button>
 
                       <button
@@ -425,7 +465,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenGuidedTour }) => {
                         className="w-full text-left p-2 rounded-lg hover:bg-[#F1F7FC] text-xs font-medium text-[#17324D] flex items-center gap-2"
                       >
                         <Building2 className="w-4 h-4 text-[#0B477F]" />
-                        <span>Select Portal</span>
+                        <span>Select Portal Hub</span>
                       </button>
                     </div>
 

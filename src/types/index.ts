@@ -1,4 +1,4 @@
-export type ActivePortalRole = 'public' | 'admin' | 'bureau_officer';
+export type ActivePortalRole = 'public' | 'admin' | 'officials' | 'bureau_officer';
 
 export type UserRole =
   | 'public'

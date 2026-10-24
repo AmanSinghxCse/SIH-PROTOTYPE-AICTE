@@ -114,8 +114,8 @@ export type PermissionAction =
 interface CaseTrackContextType {
   currentUser: User;
   isAuthenticated: boolean;
-  activePortal: 'public' | 'admin' | 'bureau_officer';
-  login: (email: string, password: string, portal?: 'admin' | 'bureau_officer') => Promise<{ success: boolean; error?: string }>;
+  activePortal: 'public' | 'admin' | 'officials' | 'bureau_officer';
+  login: (email: string, password: string, portal?: 'admin' | 'officials' | 'bureau_officer') => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   switchUserRole: (role: UserRole) => void;
   institutions: Institution[];
@@ -168,7 +168,7 @@ const STORAGE_KEY_PREFIX = 'aicte_casetrack_v3_';
 
 export const CaseTrackProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Session check
-  const [session, setSession] = useState<{ userId: string; email: string; role: UserRole; portal: 'public' | 'admin' | 'bureau_officer' } | null>(() => {
+  const [session, setSession] = useState<{ userId: string; email: string; role: UserRole; portal: 'public' | 'admin' | 'officials' | 'bureau_officer'; token?: string } | null>(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY_PREFIX}auth_session`);
     if (saved) {
       try {
@@ -193,12 +193,12 @@ export const CaseTrackProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return INITIAL_USERS[0]; // Public Ananya Sharma by default
   });
 
-  const activePortal: 'public' | 'admin' | 'bureau_officer' = session
+  const activePortal: 'public' | 'admin' | 'officials' | 'bureau_officer' = session
     ? session.portal
     : currentUser.role === 'admin'
     ? 'admin'
     : currentUser.role === 'bureau_officer' || currentUser.role === 'officer'
-    ? 'bureau_officer'
+    ? 'officials'
     : 'public';
 
   // Complaints state
@@ -468,11 +468,11 @@ export const CaseTrackProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return true;
   };
 
-  // Secure Portal Login for Government Officials
+  // Secure Portal Login for Administration & Government Officials
   const login = async (
     email: string,
     password: string,
-    portal: 'admin' | 'bureau_officer' = 'admin'
+    portal: 'admin' | 'officials' | 'bureau_officer' = 'admin'
   ): Promise<{ success: boolean; error?: string }> => {
     // Simulated auth delay
     await new Promise(r => setTimeout(r, 450));
@@ -491,15 +491,24 @@ export const CaseTrackProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     if (user.role === 'public') {
       return {
         success: false,
-        error: 'Access Restricted: Public complainant accounts cannot access the Government Officials Portal. Please use citizen complaint tracking.'
+        error: 'Access Restricted: Public complainant accounts cannot access authorized government portals. Please use citizen complaint tracking.'
       };
     }
+
+    if (portal === 'admin' && user.role !== 'admin') {
+      return {
+        success: false,
+        error: 'Access Restricted: Administrator credentials required for the Administration Portal. Bureau Desk Officers must log in to the Government Officials Portal.'
+      };
+    }
+
+    const resolvedPortal: 'admin' | 'officials' = portal === 'admin' ? 'admin' : 'officials';
 
     const sess = {
       userId: user.id,
       email: user.email,
       role: user.role,
-      portal: 'admin' as const,
+      portal: resolvedPortal,
       token: `cmis_jwt_${Date.now()}`
     };
 
@@ -508,11 +517,11 @@ export const CaseTrackProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     localStorage.setItem(`${STORAGE_KEY_PREFIX}auth_session`, JSON.stringify(sess));
 
     addAuditLogEntry({
-      action: 'Government Officials Authentication',
+      action: resolvedPortal === 'admin' ? 'Administration Portal Authentication' : 'Government Officials Authentication',
       entityType: 'SystemSettings',
       entityId: user.id,
-      details: `User ${user.name} (${user.designation}) authenticated into Government Officials Portal`,
-      newValue: 'admin'
+      details: `User ${user.name} (${user.designation}) authenticated into ${resolvedPortal === 'admin' ? 'Administration Portal' : 'Government Officials Portal'}`,
+      newValue: resolvedPortal
     });
 
     return { success: true };

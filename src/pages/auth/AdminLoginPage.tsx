@@ -79,17 +79,17 @@ export const AdminLoginPage: React.FC = () => {
           </div>
 
           <span className="inline-block px-3 py-0.5 rounded-full bg-white/10 text-blue-200 text-[10px] font-bold uppercase tracking-wider mb-1">
-            Government Officials Sector
+            Central System Governance
           </span>
-          <h2 className="text-xl font-black tracking-tight">Government Officials Portal</h2>
+          <h2 className="text-xl font-black tracking-tight">Administration Portal Login</h2>
           <p className="text-xs text-blue-100 mt-1">
-            Authorized sign-in for central system administrators & bureau case officers
+            Authorized sign-in for Central AICTE System Administrators & Nodal Officers
           </p>
         </div>
 
         {/* Content Area */}
         <div className="p-6 sm:p-8 space-y-6">
-          {isAlreadyOfficial ? (
+          {isAlreadyOfficial && currentUser.role === 'admin' ? (
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 text-center space-y-3">
               <p className="text-xs text-[#53677D]">
                 You are currently signed in as <strong className="text-[#17324D]">{currentUser.name}</strong> ({currentUser.designation}).
@@ -99,7 +99,7 @@ export const AdminLoginPage: React.FC = () => {
                 onClick={() => navigate('/portal/admin')}
                 className="w-full py-2.5 px-4 bg-[#0B477F] text-white font-bold text-xs rounded-xl hover:bg-[#155A91] transition-all flex items-center justify-center gap-2"
               >
-                <span>Continue to Government Officials Portal</span>
+                <span>Continue to Administration Portal</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
@@ -114,14 +114,14 @@ export const AdminLoginPage: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-bold text-[#17324D] mb-1">
-                  Official Gov Email Address
+                  Administrator Email Address
                 </label>
                 <div className="relative">
                   <Mail className="w-4 h-4 text-[#53677D] absolute left-3 top-3" />
                   <input
                     type="email"
                     required
-                    placeholder="official.name@aicte-demo.gov.in"
+                    placeholder="admin.saxena@aicte-demo.gov.in"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full text-xs pl-9 pr-3 py-2.5 rounded-xl border border-[#D6E4F0] bg-[#F1F7FC] text-[#17324D] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0B477F]"
@@ -131,7 +131,7 @@ export const AdminLoginPage: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-bold text-[#17324D] mb-1">
-                  Secure Password
+                  Administrator Password
                 </label>
                 <div className="relative">
                   <Lock className="w-4 h-4 text-[#53677D] absolute left-3 top-3" />
@@ -154,7 +154,7 @@ export const AdminLoginPage: React.FC = () => {
               </div>
 
               <div className="flex items-center justify-between text-xs pt-1">
-                <span className="text-[#53677D]">Protected by Role Authorization</span>
+                <span className="text-[#53677D]">Protected by Administrator RBAC</span>
                 <span className="text-[#0B477F] font-semibold">256-Bit SSL Secured</span>
               </div>
 
@@ -170,7 +170,7 @@ export const AdminLoginPage: React.FC = () => {
                   </>
                 ) : (
                   <>
-                    <span>Authenticate & Access Command Center</span>
+                    <span>Authenticate & Access Administration Portal</span>
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}
@@ -181,29 +181,21 @@ export const AdminLoginPage: React.FC = () => {
           {/* Quick Demo Credentials */}
           <div className="pt-4 border-t border-[#D6E4F0] text-center space-y-2">
             <div className="text-[11px] font-bold text-[#53677D] uppercase tracking-wider mb-1">
-              Select Demo Authority Role to Test:
+              Quick Administrator Autofill:
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={handleFillDemoAdmin}
-                className="py-2 px-2.5 rounded-lg border border-dashed border-[#0B477F]/40 bg-[#F1F7FC] hover:bg-[#E5F1FC] text-[#0B477F] text-xs font-semibold transition-all flex items-center justify-center gap-1.5"
-              >
-                <ShieldCheck className="w-3.5 h-3.5" />
-                <span>Nodal Admin</span>
-              </button>
-              <button
-                type="button"
-                onClick={handleFillDemoOfficer}
-                className="py-2 px-2.5 rounded-lg border border-dashed border-indigo-600/40 bg-indigo-50/50 hover:bg-indigo-50 text-indigo-700 text-xs font-semibold transition-all flex items-center justify-center gap-1.5"
-              >
-                <UserCheck className="w-3.5 h-3.5" />
-                <span>Bureau Officer</span>
-              </button>
+            <button
+              type="button"
+              onClick={handleFillDemoAdmin}
+              className="w-full py-2 px-2.5 rounded-lg border border-dashed border-[#0B477F]/40 bg-[#F1F7FC] hover:bg-[#E5F1FC] text-[#0B477F] text-xs font-semibold transition-all flex items-center justify-center gap-1.5"
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Autofill Nodal Administrator (Shri Arvind Saxena)</span>
+            </button>
+            <div className="pt-2 text-[11px] text-[#53677D]">
+              <Link to="/officials/login" className="text-[#0B477F] font-semibold hover:underline">
+                Are you a Bureau Desk Officer? Log in to Government Officials Portal &rarr;
+              </Link>
             </div>
-            <p className="text-[10px] text-[#53677D]">
-              Admin: <span className="font-mono">admin.saxena@aicte-demo.gov.in</span> • Officer: <span className="font-mono">sverma.officer@aicte-demo.gov.in</span>
-            </p>
           </div>
         </div>
 

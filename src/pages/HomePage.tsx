@@ -20,7 +20,8 @@ import {
   Info,
   Layers,
   Sparkles,
-  MapPin
+  MapPin,
+  Briefcase
 } from 'lucide-react';
 
 export const HomePage: React.FC = () => {
@@ -247,11 +248,11 @@ export const HomePage: React.FC = () => {
         <div className="text-center space-y-1">
           <h2 className="text-xl font-bold text-[#17324D]">Select Your Authorized Portal</h2>
           <p className="text-xs text-[#53677D]">
-            Consolidated portals for Public Redressal Access and Government Officials Administrative Command.
+            Distinct portals for Public Redressal, Central System Administration, and Government Officials Case Management.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-6xl mx-auto">
           {/* 1. Public Portal */}
           <div className="p-6 bg-white rounded-xl border-t-4 border-t-[#0B477F] border-x border-b border-[#D6E4F0] shadow-xs space-y-4 flex flex-col justify-between interactive-card">
             <div className="space-y-3">
@@ -280,24 +281,60 @@ export const HomePage: React.FC = () => {
             </div>
           </div>
 
-          {/* 2. Government Officials Portal */}
-          <div className="p-6 bg-white rounded-xl border-t-4 border-t-blue-700 border-x border-b border-[#D6E4F0] shadow-xs space-y-4 flex flex-col justify-between interactive-card">
+          {/* 2. Administration Portal */}
+          <div className="p-6 bg-white rounded-xl border-t-4 border-t-[#064578] border-x border-b border-[#D6E4F0] shadow-xs space-y-4 flex flex-col justify-between interactive-card">
             <div className="space-y-3">
-              <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center text-blue-700">
+              <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center text-[#064578]">
                 <ShieldCheck className="w-6 h-6" />
+              </div>
+              <h3 className="text-base font-bold text-[#17324D]">Administration Portal</h3>
+              <p className="text-xs text-[#53677D] leading-relaxed">
+                Central system control and governance command. System-wide analytics, 20 KPI monitoring cards, staff user RBAC, bureau allocation oversight, and closure sanctions.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <button
+                onClick={() => navigate('/portal/admin')}
+                className="w-full py-2.5 px-4 rounded-lg bg-[#064578] text-white hover:bg-[#0B477F] text-xs font-semibold shadow-xs transition-colors flex items-center justify-center gap-1.5"
+              >
+                <span>Enter Administration Portal</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => navigate('/admin/how-it-works')}
+                className="w-full py-2 px-4 rounded-lg bg-slate-50 border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-medium transition-colors flex items-center justify-center gap-1.5"
+              >
+                <span>Admin Redressal SOP</span>
+              </button>
+            </div>
+          </div>
+
+          {/* 3. Government Officials Portal */}
+          <div className="p-6 bg-white rounded-xl border-t-4 border-t-indigo-700 border-x border-b border-[#D6E4F0] shadow-xs space-y-4 flex flex-col justify-between interactive-card">
+            <div className="space-y-3">
+              <div className="w-12 h-12 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-700">
+                <Briefcase className="w-6 h-6" />
               </div>
               <h3 className="text-base font-bold text-[#17324D]">Government Officials Portal</h3>
               <p className="text-xs text-[#53677D] leading-relaxed">
-                Integrated administrative command center for authorized AICTE administrators and bureau officers. Includes 20 KPI cards, bureau investigation desks, case allocation, and audit governance.
+                Operational case workspace for bureau desk officers. Examine evidence, dispatch statutory college explanation notices, record rejoinders, and formulate resolution findings.
               </p>
             </div>
-            <button
-              onClick={() => navigate('/portal/admin')}
-              className="w-full py-2.5 px-4 rounded-lg bg-blue-700 text-white hover:bg-blue-800 text-xs font-semibold shadow-xs transition-colors flex items-center justify-center gap-1.5"
-            >
-              <span>Enter Government Officials Portal</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
+            <div className="space-y-2">
+              <button
+                onClick={() => navigate('/portal/officials')}
+                className="w-full py-2.5 px-4 rounded-lg bg-indigo-700 text-white hover:bg-indigo-800 text-xs font-semibold shadow-xs transition-colors flex items-center justify-center gap-1.5"
+              >
+                <span>Enter Officials Workspace</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => navigate('/officials/how-it-works')}
+                className="w-full py-2 px-4 rounded-lg bg-slate-50 border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-medium transition-colors flex items-center justify-center gap-1.5"
+              >
+                <span>Officer Operational Guide</span>
+              </button>
+            </div>
           </div>
         </div>
       </section>
@@ -383,50 +420,50 @@ export const HomePage: React.FC = () => {
         </div>
       </section>
 
-      {/* 5. How It Works & Track Complaint Grid */}
+      {/* 5. Citizen Tracking & Public Redressal Advisory */}
       <section id="track-section" className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-        {/* How It Works (3 Steps) */}
+        {/* Citizen Redressal Advisory & Rights */}
         <div className="lg:col-span-7 bg-white rounded-xl border border-[#D6E4F0] p-6 space-y-4 flex flex-col justify-between shadow-xs">
           <div>
-            <h3 className="text-base font-bold text-[#17324D]">How It Works</h3>
+            <h3 className="text-base font-bold text-[#17324D] flex items-center gap-2">
+              <ShieldCheck className="w-5 h-5 text-[#0B477F]" />
+              <span>AICTE Citizen Redressal Advisory & Complainant Rights</span>
+            </h3>
             <p className="text-xs text-[#53677D] mt-0.5">
-              Procedural steps to file, verify, and resolve institution grievances under AICTE guidelines.
+              Statutory protections and guidelines governing student and faculty grievances under AICTE Redressal Regulations 2019.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
-            <div className="space-y-2 text-center p-3 rounded-lg bg-[#F1F7FC] border border-[#D6E4F0]">
-              <div className="w-10 h-10 rounded-full bg-[#E5F1FC] text-[#0B477F] mx-auto flex items-center justify-center font-bold text-xs">
-                1
-              </div>
-              <div className="text-xs font-bold text-[#17324D]">Register Complaint</div>
-              <p className="text-[11px] text-[#53677D]">Submit grievance with institution details and documentation.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+              <div className="text-xs font-bold text-[#17324D]">Statutory Timelines</div>
+              <p className="text-[11px] text-[#53677D] leading-relaxed">
+                Mandatory resolution timeline within 30 days for general grievances, and 14 days for urgent fee/ragging dockets.
+              </p>
             </div>
 
-            <div className="space-y-2 text-center p-3 rounded-lg bg-[#F1F7FC] border border-[#D6E4F0]">
-              <div className="w-10 h-10 rounded-full bg-[#E5F1FC] text-[#0B477F] mx-auto flex items-center justify-center font-bold text-xs">
-                2
-              </div>
-              <div className="text-xs font-bold text-[#17324D]">Cross-Bureau Inquiry</div>
-              <p className="text-[11px] text-[#53677D]">Handling bureau checks evidence, correlation, and history.</p>
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+              <div className="text-xs font-bold text-[#17324D]">Identity Protection</div>
+              <p className="text-[11px] text-[#53677D] leading-relaxed">
+                Complainants may submit anonymously or with confidential flag to protect against institutional retaliation.
+              </p>
             </div>
 
-            <div className="space-y-2 text-center p-3 rounded-lg bg-[#F1F7FC] border border-[#D6E4F0]">
-              <div className="w-10 h-10 rounded-full bg-[#E5F1FC] text-[#0B477F] mx-auto flex items-center justify-center font-bold text-xs">
-                3
-              </div>
-              <div className="text-xs font-bold text-[#17324D]">Resolution & Closure</div>
-              <p className="text-[11px] text-[#53677D]">Official order issued with compliance recorded in audit trail.</p>
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+              <div className="text-xs font-bold text-[#17324D]">Direct Enforcement</div>
+              <p className="text-[11px] text-[#53677D] leading-relaxed">
+                Council orders mandate direct fee refunds and remedial actions with compliance verified before closure.
+              </p>
             </div>
           </div>
 
           <div className="pt-2 border-t border-[#D6E4F0] flex items-center justify-between text-xs text-[#53677D]">
-            <span>Need architectural lifecycle details?</span>
+            <span>Need to file a new institutional complaint?</span>
             <button
-              onClick={() => navigate('/workflow')}
+              onClick={() => navigate('/register')}
               className="font-bold text-[#0B477F] hover:underline flex items-center gap-1"
             >
-              <span>View 7-Stage Circular Workflow</span>
+              <span>File Complaint (Form 1A)</span>
               <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>

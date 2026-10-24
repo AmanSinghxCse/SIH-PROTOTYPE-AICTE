@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 
 interface PortalCardConfig {
-  role: 'public' | 'admin';
+  role: 'public' | 'admin' | 'officials';
   title: string;
   hindiTitle: string;
   tagline: string;
@@ -48,46 +48,72 @@ const PORTALS: PortalCardConfig[] = [
   },
   {
     role: 'admin',
-    title: 'Government Officials Portal',
-    hindiTitle: 'शासकीय अधिकारी एवं केंद्रीय प्रशासनिक पोर्टल',
-    tagline: 'Central Administration & Bureau Command Center',
-    description: 'Unified administrative workspace for authorized AICTE officials, central administrators, and bureau desk officers. Combines 20 KPI monitoring cards, bureau unit operations, case allocation, document scrutiny, institution intelligence, and compliance audit.',
-    demoUser: 'Shri Arvind Saxena / Smt. Sunita Verma',
-    demoDesignation: 'Nodal Administrator / Bureau Grievance Officer',
+    title: 'Administration Portal',
+    hindiTitle: 'केंद्रीय प्रशासनिक नियंत्रण पोर्टल',
+    tagline: 'System Control, Governance & Oversight Command',
+    description: 'For authorized central administrators to configure, supervise, manage, and audit the complaint-management system, allocate cases, monitor SLAs, and sanction case closures.',
+    demoUser: 'Shri Arvind Saxena',
+    demoDesignation: 'Senior System Administrator & Nodal Incharge',
     icon: ShieldCheck,
     features: [
-      '20 Interactive KPI Monitoring Cards (Dedicated Filtered Views)',
-      'Integrated Bureau Units & Desk Investigation Workspaces',
-      'Intelligent Case Allocation with Workload Recommendations',
-      'Statutory Institution Notice & Rejoinder Verification',
-      'Priority, SLA & Deadline Governance with Extension Audits',
-      'Role-Aware AI Assistant & Compliance Analytics Reports'
+      '20 Statutory Interactive KPI Monitoring Cards',
+      'Intelligent Case Allocation & Workload Balancing',
+      'Staff User & Role Access Management (RBAC)',
+      'Statutory SLA Policy, Escalation Rules & Extension Audits',
+      'Data Quality Integrity Center & System Health Diagnostics',
+      'Dedicated Administrative Redressal Lifecycle SOP'
     ],
     badgeColor: 'bg-blue-100 text-blue-800 border-blue-200',
+    buttonLabel: 'Enter Administration Portal'
+  },
+  {
+    role: 'officials',
+    title: 'Government Officials Portal',
+    hindiTitle: 'शासकीय अधिकारी एवं अन्वेषण पोर्टल',
+    tagline: 'Operational Case Management & Desk Workspaces',
+    description: 'For authorized government personnel and desk officers to process assigned responsibilities, examine evidence, dispatch college explanation directives, log rejoinders, and formulate resolution findings.',
+    demoUser: 'Smt. Sunita Verma',
+    demoDesignation: 'Assistant Director / Bureau Grievance Officer',
+    icon: Briefcase,
+    features: [
+      'Operational Case Investigation Desk with 14 KPI Cards',
+      'Statutory Institution Notice Dispatch (Stage 6) & Rejoinder Logging',
+      'Citizen Clarification Directives & Evidence Requests',
+      'Priority Follow-Up Tasks & Operational Hearing Reminders',
+      'Formal Resolution Recommendation Formulation (Stage 8)',
+      'Council Officer AI Case Assistant & Intelligence Engine'
+    ],
+    badgeColor: 'bg-indigo-100 text-indigo-800 border-indigo-200',
     buttonLabel: 'Enter Government Officials Portal'
   }
 ];
 
 export const PortalSelectPage: React.FC = () => {
   const { currentUser, switchUserRole, isAuthenticated } = useCaseTrack();
-  const [selectedRole, setSelectedRole] = useState<'public' | 'admin'>(
-    currentUser.role === 'public' ? 'public' : 'admin'
+  const [selectedRole, setSelectedRole] = useState<'public' | 'admin' | 'officials'>(
+    currentUser.role === 'admin' ? 'admin' : currentUser.role === 'public' ? 'public' : 'officials'
   );
   const navigate = useNavigate();
 
-  const handleSelectRole = (role: 'public' | 'admin') => {
+  const handleSelectRole = (role: 'public' | 'admin' | 'officials') => {
     setSelectedRole(role);
   };
 
-  const handleEnterPortal = (role: 'public' | 'admin') => {
+  const handleEnterPortal = (role: 'public' | 'admin' | 'officials') => {
     if (role === 'public') {
       switchUserRole('public');
       navigate('/portal/public');
-    } else {
-      if (isAuthenticated && (currentUser.role === 'admin' || currentUser.role === 'bureau_officer' || currentUser.role === 'officer')) {
+    } else if (role === 'admin') {
+      if (isAuthenticated && currentUser.role === 'admin') {
         navigate('/portal/admin');
       } else {
         navigate('/admin/login');
+      }
+    } else {
+      if (isAuthenticated && (currentUser.role === 'bureau_officer' || currentUser.role === 'officer' || currentUser.role === 'admin')) {
+        navigate('/portal/officials');
+      } else {
+        navigate('/officials/login');
       }
     }
   };
@@ -109,12 +135,17 @@ export const PortalSelectPage: React.FC = () => {
         </p>
       </div>
 
-      {/* Two Professional Portals in Balanced Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-5xl mx-auto">
+      {/* Three Dedicated Portals in Balanced Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 max-w-7xl mx-auto">
         {PORTALS.map(portal => {
           const Icon = portal.icon;
           const isSelected = selectedRole === portal.role;
-          const isCurrentActive = portal.role === 'public' ? currentUser.role === 'public' : currentUser.role !== 'public';
+          const isCurrentActive =
+            portal.role === 'public'
+              ? currentUser.role === 'public'
+              : portal.role === 'admin'
+              ? currentUser.role === 'admin'
+              : currentUser.role === 'bureau_officer' || currentUser.role === 'officer';
 
           return (
             <div

@@ -22,12 +22,18 @@ import { PresentationModePage } from './pages/PresentationModePage';
 import { AboutArchitecturePage } from './pages/AboutArchitecturePage';
 import { LoginPage } from './pages/LoginPage';
 
-// Dedicated Secure Login Page
+// Dedicated Secure Login Pages
 import { AdminLoginPage } from './pages/auth/AdminLoginPage';
+import { OfficialsLoginPage } from './pages/auth/OfficialsLoginPage';
 
 // Consolidated Portal Dashboards
 import { PublicDashboardPage } from './pages/dashboards/PublicDashboardPage';
 import { AdminDashboardPage } from './pages/dashboards/AdminDashboardPage';
+import { GovernmentOfficialsDashboardPage } from './pages/dashboards/GovernmentOfficialsDashboardPage';
+
+// Dedicated "How It Works" Pages (Administration & Government Officials)
+import { AdminHowItWorksPage } from './pages/help/AdminHowItWorksPage';
+import { OfficialsHowItWorksPage } from './pages/help/OfficialsHowItWorksPage';
 
 export const App: React.FC = () => {
   return (
@@ -36,8 +42,8 @@ export const App: React.FC = () => {
         <Routes>
           {/* Standalone Authentication Pages */}
           <Route path="/admin/login" element={<AdminLoginPage />} />
-          <Route path="/officer/login" element={<Navigate to="/admin/login" replace />} />
-          <Route path="/officials/login" element={<AdminLoginPage />} />
+          <Route path="/officer/login" element={<Navigate to="/officials/login" replace />} />
+          <Route path="/officials/login" element={<OfficialsLoginPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/presentation" element={<PresentationModePage />} />
 
@@ -51,29 +57,56 @@ export const App: React.FC = () => {
             <Route path="/portals" element={<PortalSelectPage />} />
             <Route path="/portal-select" element={<PortalSelectPage />} />
 
-            {/* 3. Consolidated Government Portals */}
+            {/* 3. Consolidated Portals */}
+            {/* A. Public Portal */}
             <Route
               path="/portal/public"
               element={<PublicDashboardPage />}
             />
-            {/* Unified Government Officials Portal (Central Administration & Integrated Bureau Operations) */}
+
+            {/* B. Administration Portal (System Governance & Oversight - Strictly Admin Role) */}
             <Route
               path="/portal/admin"
               element={
-                <ProtectedRoute allowedRoles={['admin', 'bureau_officer', 'officer']}>
+                <ProtectedRoute allowedRoles={['admin']}>
                   <AdminDashboardPage />
                 </ProtectedRoute>
               }
             />
-            <Route path="/portal/officials" element={<Navigate to="/portal/admin" replace />} />
+            <Route
+              path="/admin/how-it-works"
+              element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <AdminHowItWorksPage />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* C. Government Officials Portal (Operational Case Management) */}
+            <Route
+              path="/portal/officials"
+              element={
+                <ProtectedRoute allowedRoles={['admin', 'bureau_officer', 'officer']}>
+                  <GovernmentOfficialsDashboardPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/officials/how-it-works"
+              element={
+                <ProtectedRoute allowedRoles={['admin', 'bureau_officer', 'officer']}>
+                  <OfficialsHowItWorksPage />
+                </ProtectedRoute>
+              }
+            />
 
             {/* Former Bureau Officer Route Permanently Redirects to Government Officials Portal */}
-            <Route path="/portal/officer" element={<Navigate to="/portal/admin" replace />} />
+            <Route path="/portal/officer" element={<Navigate to="/portal/officials" replace />} />
 
-            {/* Legacy Portal Route Redirects to Consolidated Government Officials Portal */}
-            <Route path="/portal/verification" element={<Navigate to="/portal/admin" replace />} />
-            <Route path="/portal/supervisor" element={<Navigate to="/portal/admin" replace />} />
-            <Route path="/portal/management" element={<Navigate to="/portal/admin" replace />} />
+            {/* Legacy Portal Route Redirects to Government Officials Portal */}
+            <Route path="/portal/verification" element={<Navigate to="/portal/officials" replace />} />
+            <Route path="/portal/supervisor" element={<Navigate to="/portal/officials" replace />} />
+            <Route path="/portal/management" element={<Navigate to="/portal/officials" replace />} />
 
             {/* 4. Public Complaint Filing & Case Inspection */}
             <Route path="/register" element={<NewComplaintPage />} />
