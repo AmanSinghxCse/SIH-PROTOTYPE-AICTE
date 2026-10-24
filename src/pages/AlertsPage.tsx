@@ -207,22 +207,28 @@ export const AlertsPage: React.FC = () => {
 
       {/* KPI Tally Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="p-4 bg-white rounded-xl shadow-xs border border-slate-200">
+        <div
+          onClick={() => navigate('/registry?overdue=true')}
+          className="p-4 bg-white rounded-xl shadow-xs border border-slate-200 hover:border-red-400 hover:shadow-sm transition cursor-pointer group"
+        >
           <div className="text-[11px] font-bold text-red-600 uppercase tracking-wider flex items-center justify-between">
-            <span>Critical Overdue</span>
+            <span className="group-hover:underline">Critical Overdue</span>
             <AlertCircle className="w-4 h-4 text-red-600" />
           </div>
           <div className="text-3xl font-black text-red-700 mt-2">{overdueTotal}</div>
-          <p className="text-xs text-slate-500 mt-1">Exceeded target turnaround dates</p>
+          <p className="text-xs text-slate-500 mt-1">Exceeded target turnaround dates • Click to view in Registry</p>
         </div>
 
-        <div className="p-4 bg-white rounded-xl shadow-xs border border-slate-200">
+        <div
+          onClick={() => navigate('/registry?approaching=true')}
+          className="p-4 bg-white rounded-xl shadow-xs border border-slate-200 hover:border-amber-400 hover:shadow-sm transition cursor-pointer group"
+        >
           <div className="text-[11px] font-bold text-amber-800 uppercase tracking-wider flex items-center justify-between">
-            <span>Approaching Window</span>
+            <span className="group-hover:underline">Approaching Window</span>
             <Clock className="w-4 h-4 text-amber-600" />
           </div>
           <div className="text-3xl font-black text-amber-800 mt-2">{approachingTotal}</div>
-          <p className="text-xs text-slate-500 mt-1">Due within {settings.approachingDeadlineDays} calendar days</p>
+          <p className="text-xs text-slate-500 mt-1">Due within {settings.approachingDeadlineDays} calendar days • Click to view in Registry</p>
         </div>
 
         <div className="p-4 bg-white rounded-xl shadow-xs border border-slate-200">

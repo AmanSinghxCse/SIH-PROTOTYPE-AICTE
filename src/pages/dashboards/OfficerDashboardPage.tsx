@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useCaseTrack } from '../../context/CaseTrackContext';
 import { ComplaintStatus, Complaint } from '../../types';
 import { ComplaintLifecycleTracker } from '../../components/workflow/ComplaintLifecycleTracker';
+import { getCaseAgeInDays, isApproachingDeadline, formatDate } from '../../utils/dateUtils';
 import {
   Briefcase,
   AlertCircle,
@@ -30,7 +31,11 @@ import {
   MessageCircle,
   History,
   Lock,
-  ExternalLink
+  ExternalLink,
+  ListTodo,
+  CheckSquare,
+  Flame,
+  RotateCcw
 } from 'lucide-react';
 
 export const OfficerDashboardPage: React.FC = () => {
@@ -43,12 +48,25 @@ export const OfficerDashboardPage: React.FC = () => {
     requestInstitutionResponse,
     recordInstitutionResponse,
     recommendResolution,
-    relatedSuggestions
+    relatedSuggestions,
+    settings
   } = useCaseTrack();
 
-  // Active filter tab matching the 8 KPI cards
+  // Active view: Docket Table or Personal Task Center
+  const [viewMode, setViewMode] = useState<'docket' | 'tasks'>('docket');
+
+  // Active filter tab matching the 9 operational cards
   const [activeTab, setActiveTab] = useState<
-    'all' | 'investigation' | 'institution_pending' | 'complainant_pending' | 'resolution_ready' | 'high_priority' | 'overdue' | 'recent'
+    | 'all'
+    | 'new_assigned'
+    | 'under_review'
+    | 'institution_response'
+    | 'action_required'
+    | 'near_deadline'
+    | 'overdue'
+    | 'resolution_recommended'
+    | 'closure_review'
+    | 'recent'
   >('all');
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -67,6 +85,10 @@ export const OfficerDashboardPage: React.FC = () => {
   const [newNoteContent, setNewNoteContent] = useState('');
   const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
 
+  // Completed task ids (in-memory for the session)
+  const [completedTaskIds, setCompletedTaskIds] = useState<string[]>([]);
+  const [taskFilter, setTaskFilter] = useState<'ALL' | 'CRITICAL' | 'HIGH' | 'PENDING'>('ALL');
+
   const today = '2026-10-23';
 
   // Filter complaints scoped to Officer's Bureau if specified, or all assigned if general
@@ -79,46 +101,63 @@ export const OfficerDashboardPage: React.FC = () => {
     });
   }, [complaints, currentUser]);
 
-  // Compute 8 operational metrics
+  // Compute 9 operational metrics matching required cards
   const metrics = useMemo(() => {
-    const totalActive = bureauComplaints.filter(c => c.status !== 'Closed' && c.status !== 'Resolved').length;
-    const underInvestigation = bureauComplaints.filter(c => c.status === 'Under Review' || c.status === 'Action & Investigation').length;
-    const awaitingInstitution = bureauComplaints.filter(c => c.status === 'Awaiting Institution Response' || c.institutionResponseRequested).length;
-    const awaitingCitizen = bureauComplaints.filter(c => c.status === 'Awaiting Information').length;
-    const resolutionReady = bureauComplaints.filter(c => c.status === 'Resolution Recommended').length;
-    const highUrgent = bureauComplaints.filter(c => (c.priority === 'High' || c.priority === 'Urgent' || c.priority === 'Critical') && c.status !== 'Closed').length;
-    const overdue = bureauComplaints.filter(c => c.deadlineDate < today && c.status !== 'Closed' && c.status !== 'Resolved').length;
-    
-    // Recent (updated or created in last 7 days)
+    const newlyAssigned = bureauComplaints.filter(
+      c => c.assignedOfficerId && (c.status === 'Open' || c.status === 'Under Review')
+    ).length;
+    const underReview = bureauComplaints.filter(c => c.status === 'Under Review').length;
+    const awaitingInstitution = bureauComplaints.filter(
+      c => c.status === 'Awaiting Institution Response' || c.institutionResponseRequested
+    ).length;
+    const actionRequired = bureauComplaints.filter(
+      c => c.status === 'Action & Investigation' || c.status === 'Awaiting Information'
+    ).length;
+    const nearDeadline = bureauComplaints.filter(
+      c => isApproachingDeadline(c.deadlineDate, c.status, settings.approachingDeadlineDays)
+    ).length;
+    const overdue = bureauComplaints.filter(
+      c => c.deadlineDate < today && c.status !== 'Closed' && c.status !== 'Resolved'
+    ).length;
+    const resolutionRecommended = bureauComplaints.filter(
+      c => c.status === 'Resolution Recommended'
+    ).length;
+    const awaitingClosureReview = bureauComplaints.filter(
+      c => c.status === 'Awaiting Closure Review' || (c.status === 'Resolved' && !c.closureApprovedBy)
+    ).length;
     const sevenDaysAgo = '2026-10-16';
-    const recent = bureauComplaints.filter(c => (c.lastUpdatedDate >= sevenDaysAgo || c.submissionDate >= sevenDaysAgo)).length;
+    const recent = bureauComplaints.filter(
+      c => (c.lastUpdatedDate && c.lastUpdatedDate >= sevenDaysAgo) || c.submissionDate >= sevenDaysAgo
+    ).length;
 
     return {
-      totalActive,
-      underInvestigation,
+      newlyAssigned,
+      underReview,
       awaitingInstitution,
-      awaitingCitizen,
-      resolutionReady,
-      highUrgent,
+      actionRequired,
+      nearDeadline,
       overdue,
+      resolutionRecommended,
+      awaitingClosureReview,
       recent
     };
-  }, [bureauComplaints, today]);
+  }, [bureauComplaints, today, settings.approachingDeadlineDays]);
 
   // Filtered queue based on active tab and search filters
   const filteredQueue = useMemo(() => {
     return bureauComplaints.filter(c => {
       // Metric card tab filtering
-      if (activeTab === 'all' && (c.status === 'Closed' || c.status === 'Resolved')) return false; // Show active by default
-      if (activeTab === 'investigation' && !(c.status === 'Under Review' || c.status === 'Action & Investigation')) return false;
-      if (activeTab === 'institution_pending' && !(c.status === 'Awaiting Institution Response' || c.institutionResponseRequested)) return false;
-      if (activeTab === 'complainant_pending' && c.status !== 'Awaiting Information') return false;
-      if (activeTab === 'resolution_ready' && c.status !== 'Resolution Recommended') return false;
-      if (activeTab === 'high_priority' && !(['High', 'Urgent', 'Critical'].includes(c.priority) && c.status !== 'Closed')) return false;
+      if (activeTab === 'new_assigned' && !c.assignedOfficerId) return false;
+      if (activeTab === 'under_review' && c.status !== 'Under Review') return false;
+      if (activeTab === 'institution_response' && !(c.status === 'Awaiting Institution Response' || c.institutionResponseRequested)) return false;
+      if (activeTab === 'action_required' && !(c.status === 'Action & Investigation' || c.status === 'Awaiting Information')) return false;
+      if (activeTab === 'near_deadline' && !isApproachingDeadline(c.deadlineDate, c.status, settings.approachingDeadlineDays)) return false;
       if (activeTab === 'overdue' && !(c.deadlineDate < today && c.status !== 'Closed' && c.status !== 'Resolved')) return false;
+      if (activeTab === 'resolution_recommended' && c.status !== 'Resolution Recommended') return false;
+      if (activeTab === 'closure_review' && !(c.status === 'Awaiting Closure Review' || (c.status === 'Resolved' && !c.closureApprovedBy))) return false;
       if (activeTab === 'recent') {
         const sevenDaysAgo = '2026-10-16';
-        if (!(c.lastUpdatedDate >= sevenDaysAgo || c.submissionDate >= sevenDaysAgo)) return false;
+        if (!((c.lastUpdatedDate && c.lastUpdatedDate >= sevenDaysAgo) || c.submissionDate >= sevenDaysAgo)) return false;
       }
 
       // Priority filter
@@ -139,7 +178,148 @@ export const OfficerDashboardPage: React.FC = () => {
 
       return true;
     });
-  }, [bureauComplaints, activeTab, priorityFilter, categoryFilter, searchTerm, today]);
+  }, [bureauComplaints, activeTab, priorityFilter, categoryFilter, searchTerm, today, settings.approachingDeadlineDays]);
+
+  // Dynamic helper for next required action
+  const getNextRequiredAction = (c: Complaint) => {
+    if (c.isReopened || c.status === 'Reopened') {
+      return {
+        label: 'Stage 5: High-Priority Re-inquiry',
+        badge: 'bg-rose-100 text-rose-800 border-rose-300'
+      };
+    }
+    if (c.status === 'Awaiting Institution Response' || c.institutionResponseRequested) {
+      return {
+        label: 'Stage 6: Review Institutional Rejoinder',
+        badge: 'bg-yellow-100 text-yellow-800 border-yellow-300'
+      };
+    }
+    if (c.status === 'Awaiting Information') {
+      return {
+        label: 'Stage 2: Citizen Clarification Pending',
+        badge: 'bg-purple-100 text-purple-800 border-purple-300'
+      };
+    }
+    if (c.status === 'Action & Investigation') {
+      return {
+        label: 'Stage 7: On-Site Inquiry / Hearing',
+        badge: 'bg-indigo-100 text-indigo-800 border-indigo-300'
+      };
+    }
+    if (c.status === 'Resolution Recommended') {
+      return {
+        label: 'Stage 8: Formulate Directives',
+        badge: 'bg-teal-100 text-teal-800 border-teal-300'
+      };
+    }
+    if (c.status === 'Awaiting Closure Review' || (c.status === 'Resolved' && !c.closureApprovedBy)) {
+      return {
+        label: 'Stage 9: Administrative Sanction Pending',
+        badge: 'bg-blue-100 text-blue-800 border-blue-300'
+      };
+    }
+    if (c.status === 'Closed') {
+      return {
+        label: 'Stage 10: Disposed & Record Archived',
+        badge: 'bg-slate-100 text-slate-600 border-slate-300'
+      };
+    }
+    return {
+      label: 'Stage 5: Conduct Preliminary Investigation',
+      badge: 'bg-blue-100 text-blue-800 border-blue-300'
+    };
+  };
+
+  // Personal Task / Follow-up Center Items
+  const tasks = useMemo(() => {
+    const list: Array<{
+      id: string;
+      complaintId: string;
+      complaintTitle: string;
+      institutionName: string;
+      taskTitle: string;
+      urgency: 'Critical' | 'High' | 'Medium' | 'Routine';
+      dueDate: string;
+      category: string;
+      targetTab: 'actions' | 'notes' | 'lifecycle';
+    }> = [];
+
+    bureauComplaints.forEach(c => {
+      if (c.status === 'Closed') return;
+
+      const isOverdue = c.deadlineDate < today && c.status !== 'Resolved';
+      const isNear = isApproachingDeadline(c.deadlineDate, c.status, settings.approachingDeadlineDays);
+
+      if (isOverdue) {
+        list.push({
+          id: `TASK-OD-${c.id}`,
+          complaintId: c.id,
+          complaintTitle: c.title,
+          institutionName: c.institutionName,
+          taskTitle: `Case has exceeded SLA deadline (${c.deadlineDate}). Formulate findings or request deadline extension immediately.`,
+          urgency: 'Critical',
+          dueDate: c.deadlineDate,
+          category: c.category,
+          targetTab: 'actions'
+        });
+      } else if (isNear) {
+        list.push({
+          id: `TASK-APP-${c.id}`,
+          complaintId: c.id,
+          complaintTitle: c.title,
+          institutionName: c.institutionName,
+          taskTitle: `Approaching deadline: Finalize inquiry and recommend resolution before ${c.deadlineDate}.`,
+          urgency: 'High',
+          dueDate: c.deadlineDate,
+          category: c.category,
+          targetTab: 'actions'
+        });
+      }
+
+      if (c.status === 'Awaiting Institution Response' || c.institutionResponseRequested) {
+        list.push({
+          id: `TASK-INST-${c.id}`,
+          complaintId: c.id,
+          complaintTitle: c.title,
+          institutionName: c.institutionName,
+          taskTitle: `Examine statutory response from ${c.institutionName}. Record findings or issue reminder notice.`,
+          urgency: 'Medium',
+          dueDate: c.deadlineDate,
+          category: c.category,
+          targetTab: 'actions'
+        });
+      }
+
+      if (c.status === 'Action & Investigation' || c.status === 'Under Review') {
+        list.push({
+          id: `TASK-RES-${c.id}`,
+          complaintId: c.id,
+          complaintTitle: c.title,
+          institutionName: c.institutionName,
+          taskTitle: `Prepare formal resolution terms & recommendations for administrative sanction.`,
+          urgency: c.priority === 'High' || c.priority === 'Critical' ? 'High' : 'Medium',
+          dueDate: c.deadlineDate,
+          category: c.category,
+          targetTab: 'actions'
+        });
+      }
+    });
+
+    return list.sort((a, b) => {
+      const order = { Critical: 4, High: 3, Medium: 2, Routine: 1 };
+      return order[b.urgency] - order[a.urgency];
+    });
+  }, [bureauComplaints, today, settings.approachingDeadlineDays]);
+
+  const filteredTasks = useMemo(() => {
+    return tasks.filter(t => {
+      const isDone = completedTaskIds.includes(t.id);
+      if (taskFilter === 'PENDING' && isDone) return false;
+      if (taskFilter === 'CRITICAL' && t.urgency !== 'Critical') return false;
+      if (taskFilter === 'HIGH' && t.urgency !== 'High') return false;
+      return true;
+    });
+  }, [tasks, completedTaskIds, taskFilter]);
 
   const selectedCase = useMemo(() => {
     if (!selectedCaseId) return null;
@@ -160,457 +340,567 @@ export const OfficerDashboardPage: React.FC = () => {
   const handleDemandInstitution = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCase || !institutionQuery.trim()) return;
+
     requestInstitutionResponse(selectedCase.id, institutionQuery.trim());
-    setActionSuccessMsg('Formal demand for explanation issued to institution and logged in case docket.');
+    setActionSuccessMsg(`Formal statutory explanation demand dispatched to ${selectedCase.institutionName}. Status set to Awaiting Institution Response.`);
     setInstitutionQuery('');
-    setTimeout(() => setActionSuccessMsg(null), 4000);
+    setTimeout(() => setActionSuccessMsg(null), 3500);
   };
 
   const handleRecordInstitutionReply = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCase || !institutionReply.trim()) return;
+
     recordInstitutionResponse(selectedCase.id, institutionReply.trim());
-    setActionSuccessMsg('Official institution explanation recorded. Case progressed to Action & Investigation.');
+    setActionSuccessMsg(`Official institution rejoinder registered on record for ${selectedCase.id}. Moved to Action & Investigation.`);
     setInstitutionReply('');
-    setTimeout(() => setActionSuccessMsg(null), 4000);
+    setTimeout(() => setActionSuccessMsg(null), 3500);
   };
 
   const handleRequestCitizenInfo = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCase || !citizenQuery.trim()) return;
+
     requestComplainantInfo(selectedCase.id, citizenQuery.trim());
-    setActionSuccessMsg('Citizen clarification inquiry dispatched. Status set to Awaiting Information.');
+    setActionSuccessMsg(`Clarification notice dispatched to complainant for ${selectedCase.id}. Status set to Awaiting Information.`);
     setCitizenQuery('');
-    setTimeout(() => setActionSuccessMsg(null), 4000);
+    setTimeout(() => setActionSuccessMsg(null), 3500);
   };
 
   const handleRecommendResolution = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCase || !resolutionProposal.trim()) return;
+
     recommendResolution(selectedCase.id, resolutionProposal.trim());
-    setActionSuccessMsg('Resolution recommendation submitted to Administration for formal closure approval.');
+    setActionSuccessMsg(`Formal resolution terms formulated. Complaint ${selectedCase.id} forwarded to Administration Cell for final closure approval.`);
     setResolutionProposal('');
-    setTimeout(() => setActionSuccessMsg(null), 4000);
+    setTimeout(() => setActionSuccessMsg(null), 3500);
   };
 
-  const handleAddNote = (e: React.FormEvent) => {
+  const handleAddInternalNote = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCase || !newNoteContent.trim()) return;
+
     addNote(selectedCase.id, newNoteContent.trim(), undefined, true);
-    setActionSuccessMsg('Confidential investigation note added to case file.');
+    setActionSuccessMsg(`Confidential internal note added to ${selectedCase.id}. Visible to council staff only.`);
     setNewNoteContent('');
-    setTimeout(() => setActionSuccessMsg(null), 4000);
+    setTimeout(() => setActionSuccessMsg(null), 3000);
+  };
+
+  const toggleTaskCompletion = (taskId: string) => {
+    if (completedTaskIds.includes(taskId)) {
+      setCompletedTaskIds(completedTaskIds.filter(id => id !== taskId));
+    } else {
+      setCompletedTaskIds([...completedTaskIds, taskId]);
+    }
   };
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-12">
-      {/* Officer Header Banner */}
-      <div className="bg-gradient-to-r from-[#064578] via-[#0B477F] to-[#155A91] text-white p-6 rounded-xl shadow-md border-b-4 border-amber-400">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/10 rounded-full text-xs font-semibold text-blue-100 mb-2 border border-white/20">
-              <Shield className="w-3.5 h-3.5 text-amber-300" />
-              <span>AICTE Bureau Operations Workspace</span>
-              <span className="text-white/40">|</span>
-              <span className="text-amber-300">Bureau of Grievance Redressal ({currentUser?.bureauId || 'BUR-GRV'})</span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Bureau Officer Operational Console</h1>
-            <p className="text-blue-100 text-sm mt-1 max-w-2xl">
-              Conduct investigations, issue formal explanation demands to AICTE-approved institutions, examine documentary evidence, and formulate official resolution proposals.
-            </p>
+    <div className="py-6 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto space-y-6">
+      {/* Officer Header */}
+      <div className="bg-white rounded-2xl border border-[#D6E4F0] p-6 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div>
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 text-[#0B477F] text-xs font-bold border border-blue-200 mb-2">
+            <Briefcase className="w-3.5 h-3.5" />
+            <span>Bureau Officer Operations • Desk Investigation & Verification</span>
           </div>
-          <div className="flex items-center gap-3 self-start md:self-auto bg-white/10 p-3 rounded-lg border border-white/15">
-            <div className="w-10 h-10 rounded-full bg-amber-400 text-[#0B477F] flex items-center justify-center font-bold text-sm shadow">
-              {currentUser?.name ? currentUser.name.split(' ').map(n => n[0]).join('') : 'BO'}
-            </div>
-            <div>
-              <p className="text-xs text-blue-200">Logged Officer</p>
-              <p className="text-sm font-semibold text-white">{currentUser?.name || 'Bureau Officer'}</p>
-              <p className="text-[11px] text-amber-300">Official Jurisdiction: AICTE Bureau Cells</p>
-            </div>
-          </div>
+          <h1 className="text-2xl font-black text-[#17324D]">
+            Bureau Officer Operational Center
+          </h1>
+          <p className="text-xs text-[#53677D] mt-1">
+            Logged in as: <strong className="text-[#17324D]">{currentUser?.name}</strong> ({currentUser?.designation}) • Bureau: <strong className="text-[#0B477F]">{currentUser?.bureauName || 'All Bureaus'}</strong>
+          </p>
+        </div>
+
+        {/* View Toggle Tabs */}
+        <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl border border-slate-200">
+          <button
+            onClick={() => setViewMode('docket')}
+            className={`px-3.5 py-2 text-xs font-bold rounded-lg transition flex items-center gap-1.5 ${
+              viewMode === 'docket'
+                ? 'bg-white text-[#0B477F] shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Layers className="w-4 h-4" />
+            <span>Assigned Docket ({bureauComplaints.length})</span>
+          </button>
+          <button
+            onClick={() => setViewMode('tasks')}
+            className={`px-3.5 py-2 text-xs font-bold rounded-lg transition flex items-center gap-1.5 ${
+              viewMode === 'tasks'
+                ? 'bg-white text-[#0B477F] shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <ListTodo className="w-4 h-4 text-amber-600" />
+            <span>Task & Follow-up Center ({tasks.length - completedTaskIds.length})</span>
+          </button>
         </div>
       </div>
 
-      {/* 3.1 8 Clickable Operational Metric Cards */}
+      {/* 9 Required Operational Metric Cards */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
+          <h2 className="text-xs font-black uppercase tracking-wider text-[#17324D] flex items-center gap-2">
             <Briefcase className="w-4 h-4 text-[#0B477F]" />
-            Bureau Workload & Action Queues
+            <span>Operational Queues & Statutory Filters (9 Categories)</span>
           </h2>
-          <span className="text-xs text-slate-500">Click any metric card below to filter the active queue</span>
+          <span className="text-xs text-slate-500">Click any card below to filter the active docket view</span>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
-          {/* 1. Active Queue */}
-          <button
-            onClick={() => setActiveTab('all')}
-            className={`text-left p-3 rounded-xl border transition-all ${
-              activeTab === 'all'
-                ? 'bg-blue-50 border-[#0B477F] shadow-sm ring-2 ring-[#0B477F]/20'
-                : 'bg-white border-slate-200 hover:border-blue-300 hover:bg-slate-50'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold text-slate-600 truncate">Active Queue</span>
-              <Briefcase className="w-4 h-4 text-[#0B477F]" />
-            </div>
-            <p className="text-2xl font-bold text-slate-900 mt-2">{metrics.totalActive}</p>
-            <p className="text-[10px] text-slate-500 mt-0.5">Assigned cases</p>
-          </button>
 
-          {/* 2. Under Investigation */}
-          <button
-            onClick={() => setActiveTab('investigation')}
-            className={`text-left p-3 rounded-xl border transition-all ${
-              activeTab === 'investigation'
-                ? 'bg-indigo-50 border-indigo-600 shadow-sm ring-2 ring-indigo-600/20'
-                : 'bg-white border-slate-200 hover:border-indigo-300 hover:bg-slate-50'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold text-slate-600 truncate">Active Probe</span>
-              <FileCheck2 className="w-4 h-4 text-indigo-600" />
-            </div>
-            <p className="text-2xl font-bold text-indigo-900 mt-2">{metrics.underInvestigation}</p>
-            <p className="text-[10px] text-slate-500 mt-0.5">Action & inquiry</p>
-          </button>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9 gap-2.5">
+          {[
+            { id: 'new_assigned', label: 'Newly Assigned', count: metrics.newlyAssigned, sub: 'Intake allocation', icon: Clock, color: 'text-blue-600', bg: 'bg-blue-50' },
+            { id: 'under_review', label: 'Under Review', count: metrics.underReview, sub: 'Stage 5 scrutiny', icon: Eye, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+            { id: 'institution_response', label: 'Inst. Response', count: metrics.awaitingInstitution, sub: 'Notice dispatched', icon: Building, color: 'text-amber-600', bg: 'bg-amber-50' },
+            { id: 'action_required', label: 'Action Required', count: metrics.actionRequired, sub: 'Hearing & proof', icon: Shield, color: 'text-purple-600', bg: 'bg-purple-50' },
+            { id: 'near_deadline', label: 'Near Deadline', count: metrics.nearDeadline, sub: `≤ ${settings.approachingDeadlineDays} days left`, icon: AlertTriangle, color: 'text-orange-600', bg: 'bg-orange-50' },
+            { id: 'overdue', label: 'My Overdue', count: metrics.overdue, sub: 'SLA exceeded', icon: Clock, color: 'text-[#C43D3D]', bg: 'bg-rose-100' },
+            { id: 'resolution_recommended', label: 'Resolution Ready', count: metrics.resolutionRecommended, sub: 'Directives drafted', icon: CheckCircle2, color: 'text-teal-600', bg: 'bg-teal-50' },
+            { id: 'closure_review', label: 'Closure Review', count: metrics.awaitingClosureReview, sub: 'Sanction pending', icon: FileCheck2, color: 'text-cyan-600', bg: 'bg-cyan-50' },
+            { id: 'recent', label: 'Recent 7D', count: metrics.recent, sub: 'Latest updates', icon: History, color: 'text-slate-600', bg: 'bg-slate-100' }
+          ].map((card) => {
+            const Icon = card.icon;
+            const isSelected = activeTab === card.id;
 
-          {/* 3. Awaiting Institution Response */}
-          <button
-            onClick={() => setActiveTab('institution_pending')}
-            className={`text-left p-3 rounded-xl border transition-all ${
-              activeTab === 'institution_pending'
-                ? 'bg-amber-50 border-amber-600 shadow-sm ring-2 ring-amber-600/20'
-                : 'bg-white border-slate-200 hover:border-amber-300 hover:bg-slate-50'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold text-slate-600 truncate">Inst. Notice</span>
-              <Building className="w-4 h-4 text-amber-600" />
-            </div>
-            <p className="text-2xl font-bold text-amber-900 mt-2">{metrics.awaitingInstitution}</p>
-            <p className="text-[10px] text-amber-700 mt-0.5">Notice issued</p>
-          </button>
-
-          {/* 4. Awaiting Complainant Info */}
-          <button
-            onClick={() => setActiveTab('complainant_pending')}
-            className={`text-left p-3 rounded-xl border transition-all ${
-              activeTab === 'complainant_pending'
-                ? 'bg-purple-50 border-purple-600 shadow-sm ring-2 ring-purple-600/20'
-                : 'bg-white border-slate-200 hover:border-purple-300 hover:bg-slate-50'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold text-slate-600 truncate">Citizen Info</span>
-              <HelpCircle className="w-4 h-4 text-purple-600" />
-            </div>
-            <p className="text-2xl font-bold text-purple-900 mt-2">{metrics.awaitingCitizen}</p>
-            <p className="text-[10px] text-slate-500 mt-0.5">Proof pending</p>
-          </button>
-
-          {/* 5. Resolution Ready */}
-          <button
-            onClick={() => setActiveTab('resolution_ready')}
-            className={`text-left p-3 rounded-xl border transition-all ${
-              activeTab === 'resolution_ready'
-                ? 'bg-emerald-50 border-emerald-600 shadow-sm ring-2 ring-emerald-600/20'
-                : 'bg-white border-slate-200 hover:border-emerald-300 hover:bg-slate-50'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold text-slate-600 truncate">Resolution</span>
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-            </div>
-            <p className="text-2xl font-bold text-emerald-900 mt-2">{metrics.resolutionReady}</p>
-            <p className="text-[10px] text-emerald-700 mt-0.5">Ready for sign-off</p>
-          </button>
-
-          {/* 6. High & Urgent Priority */}
-          <button
-            onClick={() => setActiveTab('high_priority')}
-            className={`text-left p-3 rounded-xl border transition-all ${
-              activeTab === 'high_priority'
-                ? 'bg-orange-50 border-orange-600 shadow-sm ring-2 ring-orange-600/20'
-                : 'bg-white border-slate-200 hover:border-orange-300 hover:bg-slate-50'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold text-slate-600 truncate">Urgent / High</span>
-              <AlertTriangle className="w-4 h-4 text-orange-600" />
-            </div>
-            <p className="text-2xl font-bold text-orange-900 mt-2">{metrics.highUrgent}</p>
-            <p className="text-[10px] text-orange-700 mt-0.5">Fast-track action</p>
-          </button>
-
-          {/* 7. Overdue Cases */}
-          <button
-            onClick={() => setActiveTab('overdue')}
-            className={`text-left p-3 rounded-xl border transition-all ${
-              activeTab === 'overdue'
-                ? 'bg-rose-50 border-rose-600 shadow-sm ring-2 ring-rose-600/20'
-                : 'bg-white border-slate-200 hover:border-rose-300 hover:bg-slate-50'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold text-slate-600 truncate">Overdue</span>
-              <Clock className="w-4 h-4 text-rose-600" />
-            </div>
-            <p className="text-2xl font-bold text-rose-900 mt-2">{metrics.overdue}</p>
-            <p className="text-[10px] text-rose-700 mt-0.5">SLA breach risk</p>
-          </button>
-
-          {/* 8. Recently Updated */}
-          <button
-            onClick={() => setActiveTab('recent')}
-            className={`text-left p-3 rounded-xl border transition-all ${
-              activeTab === 'recent'
-                ? 'bg-teal-50 border-teal-600 shadow-sm ring-2 ring-teal-600/20'
-                : 'bg-white border-slate-200 hover:border-teal-300 hover:bg-slate-50'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold text-slate-600 truncate">Recent 7D</span>
-              <History className="w-4 h-4 text-teal-600" />
-            </div>
-            <p className="text-2xl font-bold text-teal-900 mt-2">{metrics.recent}</p>
-            <p className="text-[10px] text-slate-500 mt-0.5">Recent activity</p>
-          </button>
+            return (
+              <button
+                key={card.id}
+                onClick={() => {
+                  setActiveTab(card.id as any);
+                  setViewMode('docket');
+                }}
+                className={`text-left p-3 rounded-xl border transition-all flex flex-col justify-between ${
+                  isSelected
+                    ? 'bg-blue-50/80 border-[#0B477F] ring-2 ring-[#0B477F]/30 shadow-sm'
+                    : 'bg-white border-[#D6E4F0] hover:border-blue-300 hover:bg-slate-50'
+                }`}
+              >
+                <div className="flex items-center justify-between text-[11px] font-bold text-slate-600">
+                  <span className="truncate">{card.label}</span>
+                  <div className={`w-6 h-6 rounded-md ${card.bg} flex items-center justify-center shrink-0`}>
+                    <Icon className={`w-3.5 h-3.5 ${card.color}`} />
+                  </div>
+                </div>
+                <div className="mt-2">
+                  <span className={`text-xl font-black ${card.color}`}>{card.count}</span>
+                  <span className="text-[10px] text-slate-500 block truncate mt-0.5">{card.sub}</span>
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* Main Grid: Queue Table & Quick Details */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-        {/* Table Search & Filter Controls */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-4 border-b border-slate-200">
-          <div className="flex items-center gap-2">
-            <h3 className="font-bold text-slate-800 text-base flex items-center gap-2">
-              <Layers className="w-4 h-4 text-[#0B477F]" />
-              Assigned Complaint Docket
-            </h3>
-            <span className="px-2 py-0.5 bg-blue-50 text-[#0B477F] font-bold text-xs rounded-full border border-blue-200">
-              {filteredQueue.length} {filteredQueue.length === 1 ? 'case' : 'cases'}
-            </span>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Search */}
-            <div className="relative min-w-[220px]">
-              <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Search token, institution, subject..."
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-                className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B477F] focus:bg-white"
-              />
+      {/* VIEW MODE 1: DOCKET TABLE */}
+      {viewMode === 'docket' && (
+        <div className="bg-white rounded-xl shadow-xs border border-slate-200 p-5 space-y-4">
+          {/* Active Filter Pill Bar */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-200">
+            <div className="flex items-center gap-2">
+              <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                <Layers className="w-4 h-4 text-[#0B477F]" />
+                <span>Assigned Complaint Docket</span>
+              </h3>
+              <span className="px-2 py-0.5 bg-blue-50 text-[#0B477F] font-bold text-xs rounded-full border border-blue-200">
+                {filteredQueue.length} {filteredQueue.length === 1 ? 'case' : 'cases'}
+              </span>
+              {activeTab !== 'all' && (
+                <span className="text-[11px] font-semibold text-slate-500">
+                  (Filtered by: <strong>{activeTab.replace(/_/g, ' ').toUpperCase()}</strong>)
+                </span>
+              )}
             </div>
 
-            {/* Priority dropdown */}
-            <select
-              value={priorityFilter}
-              onChange={e => setPriorityFilter(e.target.value)}
-              className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#0B477F]"
-            >
-              <option value="all">All Priorities</option>
-              <option value="Critical">Critical</option>
-              <option value="Urgent">Urgent</option>
-              <option value="High">High</option>
-              <option value="Medium">Medium</option>
-              <option value="Low">Low</option>
-            </select>
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Search */}
+              <div className="relative min-w-[200px]">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search token, institution, subject..."
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                  className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B477F] focus:bg-white"
+                />
+              </div>
 
-            {/* Category dropdown */}
-            <select
-              value={categoryFilter}
-              onChange={e => setCategoryFilter(e.target.value)}
-              className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#0B477F]"
-            >
-              <option value="all">All Categories</option>
-              <option value="Fee Irregularity & Caution Refund">Fee Irregularity & Caution Refund</option>
-              <option value="Capitation Fee & Excess Charges">Capitation Fee & Excess Charges</option>
-              <option value="Original Certificate Withholding">Original Certificate Withholding</option>
-              <option value="Ragging & Campus Safety Harassment">Ragging & Campus Safety Harassment</option>
-              <option value="Faculty Deficit & Ghost Teachers">Faculty Deficit & Ghost Teachers</option>
-              <option value="Infrastructure & Lab Equipment Deficit">Infrastructure & Lab Equipment Deficit</option>
-              <option value="Unapproved Course & Curriculum Deviation">Unapproved Course & Curriculum Deviation</option>
-              <option value="Admission Irregularity & Quota Violation">Admission Irregularity & Quota Violation</option>
-            </select>
-
-            {(searchTerm || priorityFilter !== 'all' || categoryFilter !== 'all' || activeTab !== 'all') && (
-              <button
-                onClick={() => {
-                  setSearchTerm('');
-                  setPriorityFilter('all');
-                  setCategoryFilter('all');
-                  setActiveTab('all');
-                }}
-                className="text-xs text-rose-600 hover:text-rose-800 font-medium px-2 py-1"
+              {/* Priority dropdown */}
+              <select
+                value={priorityFilter}
+                onChange={e => setPriorityFilter(e.target.value)}
+                className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#0B477F]"
               >
-                Reset filters
-              </button>
-            )}
+                <option value="all">All Priorities</option>
+                <option value="Critical">Critical</option>
+                <option value="Urgent">Urgent</option>
+                <option value="High">High</option>
+                <option value="Medium">Medium</option>
+                <option value="Low">Low</option>
+              </select>
+
+              {/* Category dropdown */}
+              <select
+                value={categoryFilter}
+                onChange={e => setCategoryFilter(e.target.value)}
+                className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#0B477F]"
+              >
+                <option value="all">All Categories</option>
+                <option value="Infrastructure & Labs">Infrastructure & Labs</option>
+                <option value="Academic Administration & Faculty">Academic Administration</option>
+                <option value="Fee Irregularity & Caution Refund">Fee Irregularity</option>
+                <option value="Examination Malpractice & Results">Examinations</option>
+                <option value="Harassment & Anti-Ragging">Harassment / Anti-Ragging</option>
+                <option value="Regulatory Compliance & Fraud">Regulatory & Compliance</option>
+              </select>
+
+              {(searchTerm || priorityFilter !== 'all' || categoryFilter !== 'all' || activeTab !== 'all') && (
+                <button
+                  onClick={() => {
+                    setSearchTerm('');
+                    setPriorityFilter('all');
+                    setCategoryFilter('all');
+                    setActiveTab('all');
+                  }}
+                  className="text-xs text-rose-600 hover:text-rose-800 font-semibold px-2 py-1 flex items-center gap-1"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Reset</span>
+                </button>
+              )}
+            </div>
           </div>
-        </div>
 
-        {/* 3.2 Case Queue Table */}
-        <div className="overflow-x-auto mt-4">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
-                <th className="py-2.5 px-3">Complaint Token</th>
-                <th className="py-2.5 px-3">Institution & Subject</th>
-                <th className="py-2.5 px-3">Category</th>
-                <th className="py-2.5 px-3">Priority</th>
-                <th className="py-2.5 px-3">Lifecycle Stage</th>
-                <th className="py-2.5 px-3">Assigned Date</th>
-                <th className="py-2.5 px-3">Deadline & SLA</th>
-                <th className="py-2.5 px-3 text-right">Operational Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredQueue.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-500">
-                    <Briefcase className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                    <p className="font-medium text-slate-700">No complaint cases match your selected filter criteria</p>
-                    <p className="text-xs text-slate-400 mt-1">Try resetting the priority, category, or metric filters above.</p>
-                  </td>
+          {/* Docket Table with All Required Columns */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200 text-[11px] uppercase tracking-wider">
+                  <th className="py-2.5 px-3">Complaint Token</th>
+                  <th className="py-2.5 px-3 min-w-[160px]">Institution & Subject</th>
+                  <th className="py-2.5 px-3">Category</th>
+                  <th className="py-2.5 px-3">Priority</th>
+                  <th className="py-2.5 px-3">Lifecycle Stage</th>
+                  <th className="py-2.5 px-3">Assigned Date</th>
+                  <th className="py-2.5 px-3">Days Pending</th>
+                  <th className="py-2.5 px-3">Deadline & SLA</th>
+                  <th className="py-2.5 px-3">Last Updated</th>
+                  <th className="py-2.5 px-3 min-w-[180px]">Next Required Action</th>
+                  <th className="py-2.5 px-3 text-right">Actions</th>
                 </tr>
-              ) : (
-                filteredQueue.map(c => {
-                  const isOverdue = c.deadlineDate < today && c.status !== 'Closed' && c.status !== 'Resolved';
-                  const isSelected = selectedCaseId === c.id;
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredQueue.length === 0 ? (
+                  <tr>
+                    <td colSpan={11} className="py-12 text-center text-slate-500">
+                      <Briefcase className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                      <p className="font-bold text-slate-800">No complaints matching selected queue filter</p>
+                      <p className="text-xs text-slate-400 mt-1">Select "Active Queue" or clear category and priority filters.</p>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredQueue.map(c => {
+                    const isOverdue = c.deadlineDate < today && c.status !== 'Closed' && c.status !== 'Resolved';
+                    const isNear = isApproachingDeadline(c.deadlineDate, c.status, settings.approachingDeadlineDays);
+                    const age = getCaseAgeInDays(c.submissionDate, c.resolvedDate);
+                    const isSelected = selectedCaseId === c.id;
+                    const nextAction = getNextRequiredAction(c);
+                    const lastUpdated = c.lastUpdatedDate || c.submissionDate;
 
-                  return (
-                    <tr
-                      key={c.id}
-                      className={`hover:bg-blue-50/50 transition-colors ${
-                        isSelected ? 'bg-blue-50/80 font-medium' : ''
-                      }`}
-                    >
-                      {/* Token */}
-                      <td className="py-3 px-3">
-                        <span className="font-mono font-bold text-[#0B477F]">{c.id}</span>
-                        {c.isReopened && (
-                          <span className="block mt-0.5 text-[10px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.2 rounded w-fit">
-                            REOPENED
+                    return (
+                      <tr
+                        key={c.id}
+                        className={`hover:bg-blue-50/50 transition-colors ${
+                          isSelected ? 'bg-blue-50/90 font-medium' : ''
+                        }`}
+                      >
+                        {/* 1. Complaint Token */}
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          <span className="font-mono font-bold text-[#0B477F]">{c.id}</span>
+                          {c.isReopened && (
+                            <span className="block mt-0.5 text-[9px] font-bold text-amber-700 bg-amber-100 px-1 py-0.2 rounded w-fit">
+                              REOPENED
+                            </span>
+                          )}
+                        </td>
+
+                        {/* 2. Institution & Subject */}
+                        <td className="py-3 px-3">
+                          <p className="font-semibold text-slate-900 line-clamp-1" title={c.institutionName}>
+                            {c.institutionName}
+                          </p>
+                          <p className="text-slate-500 text-[11px] line-clamp-1 mt-0.5" title={c.title}>
+                            {c.title}
+                          </p>
+                        </td>
+
+                        {/* 3. Category */}
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          <span className="px-2 py-0.5 rounded-full text-[11px] bg-slate-100 text-slate-700 font-medium">
+                            {c.category}
                           </span>
-                        )}
-                      </td>
+                        </td>
 
-                      {/* Institution & Subject */}
-                      <td className="py-3 px-3 max-w-xs">
-                        <p className="font-semibold text-slate-800 truncate" title={c.institutionName}>
-                          {c.institutionName}
-                        </p>
-                        <p className="text-slate-500 text-[11px] truncate mt-0.5" title={c.title}>
-                          {c.title}
-                        </p>
-                      </td>
-
-                      {/* Category */}
-                      <td className="py-3 px-3">
-                        <span className="px-2 py-0.5 rounded-full text-[11px] bg-slate-100 text-slate-700 font-medium">
-                          {c.category}
-                        </span>
-                      </td>
-
-                      {/* Priority */}
-                      <td className="py-3 px-3">
-                        <span
-                          className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                            c.priority === 'Critical' || c.priority === 'Urgent'
-                              ? 'bg-rose-100 text-rose-800'
-                              : c.priority === 'High'
-                              ? 'bg-orange-100 text-orange-800'
-                              : c.priority === 'Medium'
-                              ? 'bg-blue-100 text-blue-800'
-                              : 'bg-slate-100 text-slate-700'
-                          }`}
-                        >
-                          {c.priority}
-                        </span>
-                      </td>
-
-                      {/* Lifecycle Stage / Status */}
-                      <td className="py-3 px-3">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
-                            c.status === 'Resolution Recommended'
-                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                              : c.status === 'Awaiting Institution Response'
-                              ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                              : c.status === 'Awaiting Information'
-                              ? 'bg-purple-100 text-purple-800 border border-purple-200'
-                              : c.status === 'Action & Investigation' || c.status === 'Under Review'
-                              ? 'bg-blue-100 text-blue-800 border border-blue-200'
-                              : c.status === 'Resolved' || c.status === 'Closed'
-                              ? 'bg-slate-100 text-slate-600'
-                              : 'bg-yellow-50 text-yellow-800'
-                          }`}
-                        >
-                          {c.status}
-                        </span>
-                      </td>
-
-                      {/* Assigned Date */}
-                      <td className="py-3 px-3 text-slate-500">
-                        {c.submissionDate ? c.submissionDate.slice(0, 10) : 'N/A'}
-                      </td>
-
-                      {/* Deadline */}
-                      <td className="py-3 px-3">
-                        <div className="flex items-center gap-1.5">
-                          <span className={`font-medium ${isOverdue ? 'text-rose-600 font-bold' : 'text-slate-700'}`}>
-                            {c.deadlineDate}
+                        {/* 4. Priority */}
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                              c.priority === 'Critical' || c.priority === 'Urgent'
+                                ? 'bg-rose-100 text-rose-800'
+                                : c.priority === 'High'
+                                ? 'bg-orange-100 text-orange-800'
+                                : c.priority === 'Medium'
+                                ? 'bg-blue-100 text-blue-800'
+                                : 'bg-slate-100 text-slate-700'
+                            }`}
+                          >
+                            {c.priority}
                           </span>
+                        </td>
+
+                        {/* 5. Lifecycle Stage */}
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          <span
+                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
+                              c.status === 'Resolution Recommended'
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                : c.status === 'Awaiting Institution Response'
+                                ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                                : c.status === 'Awaiting Information'
+                                ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                                : c.status === 'Action & Investigation' || c.status === 'Under Review'
+                                ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                                : c.status === 'Resolved' || c.status === 'Closed'
+                                ? 'bg-slate-100 text-slate-600'
+                                : 'bg-yellow-50 text-yellow-800'
+                            }`}
+                          >
+                            {c.status}
+                          </span>
+                        </td>
+
+                        {/* 6. Assigned Date */}
+                        <td className="py-3 px-3 text-slate-600 whitespace-nowrap">
+                          {formatDate(c.submissionDate)}
+                        </td>
+
+                        {/* 7. Days Pending */}
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          <span className={`font-semibold ${age > 30 ? 'text-red-700' : age > 15 ? 'text-amber-700' : 'text-slate-700'}`}>
+                            {age} d
+                          </span>
+                        </td>
+
+                        {/* 8. Deadline & SLA */}
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          <div className={`font-medium ${isOverdue ? 'text-rose-600 font-bold' : isNear ? 'text-amber-700 font-bold' : 'text-slate-700'}`}>
+                            {formatDate(c.deadlineDate)}
+                          </div>
                           {isOverdue && (
-                            <span className="inline-flex items-center px-1.5 py-0.2 bg-rose-100 text-rose-700 text-[10px] font-bold rounded">
+                            <span className="text-[9px] text-rose-600 font-bold block">
                               OVERDUE
                             </span>
                           )}
-                        </div>
-                      </td>
+                          {isNear && (
+                            <span className="text-[9px] text-amber-700 font-bold block">
+                              Due Soon
+                            </span>
+                          )}
+                        </td>
 
-                      {/* Actions */}
-                      <td className="py-3 px-3 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            onClick={() => {
-                              setSelectedCaseId(c.id);
-                              setDrawerTab('actions');
-                            }}
-                            className="px-2.5 py-1 bg-[#0B477F] text-white rounded text-[11px] font-medium hover:bg-[#155A91] transition flex items-center gap-1 shadow-sm"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                            <span>Examine</span>
-                          </button>
-                          <Link
-                            to={`/case/${c.id}`}
-                            className="p-1 text-slate-500 hover:text-slate-800 rounded hover:bg-slate-100"
-                            title="Open full page record"
-                          >
-                            <ExternalLink className="w-3.5 h-3.5" />
-                          </Link>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+                        {/* 9. Last Updated */}
+                        <td className="py-3 px-3 text-slate-500 whitespace-nowrap">
+                          {formatDate(lastUpdated)}
+                        </td>
+
+                        {/* 10. Next Required Action */}
+                        <td className="py-3 px-3">
+                          <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold border ${nextAction.badge}`}>
+                            {nextAction.label}
+                          </span>
+                        </td>
+
+                        {/* 11. Actions */}
+                        <td className="py-3 px-3 text-right whitespace-nowrap">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => {
+                                setSelectedCaseId(c.id);
+                                setDrawerTab('actions');
+                              }}
+                              className="px-2.5 py-1 bg-[#0B477F] text-white rounded text-[11px] font-bold hover:bg-[#155A91] transition flex items-center gap-1 shadow-xs"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              <span>Examine</span>
+                            </button>
+                            <Link
+                              to={`/case/${c.id}`}
+                              className="p-1 text-slate-500 hover:text-slate-800 rounded hover:bg-slate-100"
+                              title="Open full statutory record"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </Link>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* 3.3 Full Case Review Drawer / Modal */}
+      {/* VIEW MODE 2: PERSONAL TASK / FOLLOW-UP CENTER */}
+      {viewMode === 'tasks' && (
+        <div className="bg-white rounded-xl shadow-xs border border-slate-200 p-6 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
+            <div>
+              <h3 className="text-base font-black text-[#17324D] flex items-center gap-2">
+                <ListTodo className="w-5 h-5 text-amber-600" />
+                <span>Officer Priority Task & Follow-up Center</span>
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Statutory action items generated from active cases, sorted by SLA urgency and investigation milestones.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setTaskFilter('ALL')}
+                className={`px-3 py-1 text-xs font-bold rounded-lg transition ${
+                  taskFilter === 'ALL'
+                    ? 'bg-[#0B477F] text-white'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                All ({tasks.length})
+              </button>
+              <button
+                onClick={() => setTaskFilter('CRITICAL')}
+                className={`px-3 py-1 text-xs font-bold rounded-lg transition ${
+                  taskFilter === 'CRITICAL'
+                    ? 'bg-red-600 text-white'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                Critical Overdue
+              </button>
+              <button
+                onClick={() => setTaskFilter('HIGH')}
+                className={`px-3 py-1 text-xs font-bold rounded-lg transition ${
+                  taskFilter === 'HIGH'
+                    ? 'bg-amber-600 text-white'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                Approaching Window
+              </button>
+              <button
+                onClick={() => setTaskFilter('PENDING')}
+                className={`px-3 py-1 text-xs font-bold rounded-lg transition ${
+                  taskFilter === 'PENDING'
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                Pending Only ({tasks.length - completedTaskIds.length})
+              </button>
+            </div>
+          </div>
+
+          {filteredTasks.length === 0 ? (
+            <div className="py-12 text-center text-slate-500">
+              <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto mb-2" />
+              <h4 className="text-sm font-bold text-slate-800">All tasks in this view completed or clear</h4>
+              <p className="text-xs text-slate-400 mt-1">Keep monitoring new intakes or check the assigned docket.</p>
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {filteredTasks.map(task => {
+                const isCompleted = completedTaskIds.includes(task.id);
+
+                return (
+                  <div
+                    key={task.id}
+                    className={`p-4 rounded-xl border transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
+                      isCompleted
+                        ? 'bg-slate-50 border-slate-200 opacity-60'
+                        : task.urgency === 'Critical'
+                        ? 'bg-rose-50/60 border-rose-200 hover:border-rose-300'
+                        : task.urgency === 'High'
+                        ? 'bg-amber-50/60 border-amber-200 hover:border-amber-300'
+                        : 'bg-white border-slate-200 hover:border-blue-300'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <button
+                        onClick={() => toggleTaskCompletion(task.id)}
+                        className={`mt-0.5 w-5 h-5 rounded border flex items-center justify-center transition shrink-0 ${
+                          isCompleted
+                            ? 'bg-emerald-600 border-emerald-600 text-white'
+                            : 'border-slate-300 hover:border-blue-600 bg-white'
+                        }`}
+                        title={isCompleted ? 'Mark uncompleted' : 'Mark as done'}
+                      >
+                        {isCompleted && <Check className="w-3.5 h-3.5" />}
+                      </button>
+
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`px-2 py-0.2 rounded text-[10px] font-bold ${
+                              task.urgency === 'Critical'
+                                ? 'bg-red-100 text-red-800'
+                                : task.urgency === 'High'
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-blue-100 text-blue-800'
+                            }`}
+                          >
+                            {task.urgency.toUpperCase()}
+                          </span>
+                          <span className="font-mono text-xs font-bold text-[#0B477F]">{task.complaintId}</span>
+                          <span className="text-xs text-slate-600 font-semibold">• {task.institutionName}</span>
+                        </div>
+                        <p className={`text-xs font-semibold text-slate-800 mt-1 ${isCompleted ? 'line-through text-slate-500' : ''}`}>
+                          {task.taskTitle}
+                        </p>
+                        <div className="flex items-center gap-3 text-[11px] text-slate-500 mt-1">
+                          <span>Target SLA: <strong className="text-slate-700">{formatDate(task.dueDate)}</strong></span>
+                          <span>•</span>
+                          <span>Category: {task.category}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                      <button
+                        onClick={() => {
+                          setSelectedCaseId(task.complaintId);
+                          setDrawerTab(task.targetTab);
+                        }}
+                        className="px-3 py-1.5 bg-[#0B477F] text-white text-xs font-bold rounded-lg hover:bg-[#155A91] transition flex items-center gap-1.5 shadow-xs"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>Action Case</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Full Case Review Drawer / Modal */}
       {selectedCase && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex justify-end animate-fadeIn">
           <div className="w-full max-w-4xl bg-white h-full shadow-2xl flex flex-col overflow-hidden border-l border-slate-300">
             {/* Drawer Header */}
-            <div className="bg-[#0B477F] text-white p-4 flex items-center justify-between border-b-2 border-amber-400">
+            <div className="bg-[#0B477F] text-white p-4 flex items-center justify-between border-b-2 border-amber-400 shrink-0">
               <div className="flex items-center gap-3">
                 <span className="font-mono text-sm px-2.5 py-1 bg-white/10 rounded font-bold border border-white/20 text-amber-300">
                   {selectedCase.id}
@@ -618,7 +908,7 @@ export const OfficerDashboardPage: React.FC = () => {
                 <div>
                   <h3 className="font-bold text-base text-white">{selectedCase.title}</h3>
                   <p className="text-xs text-blue-200">
-                    {selectedCase.institutionName} • Registered: {selectedCase.submissionDate ? selectedCase.submissionDate.slice(0, 10) : 'N/A'}
+                    {selectedCase.institutionName} • Registered: {formatDate(selectedCase.submissionDate)}
                   </p>
                 </div>
               </div>
@@ -632,14 +922,14 @@ export const OfficerDashboardPage: React.FC = () => {
 
             {/* Notification Banner for Actions */}
             {actionSuccessMsg && (
-              <div className="bg-emerald-50 border-b border-emerald-200 px-4 py-2.5 flex items-center gap-2 text-xs text-emerald-800 font-medium">
+              <div className="bg-emerald-50 border-b border-emerald-200 px-4 py-2.5 flex items-center gap-2 text-xs text-emerald-800 font-semibold shrink-0">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                 <span>{actionSuccessMsg}</span>
               </div>
             )}
 
             {/* Navigation Tabs in Drawer */}
-            <div className="flex border-b border-slate-200 bg-slate-50 px-4">
+            <div className="flex border-b border-slate-200 bg-slate-50 px-4 shrink-0">
               <button
                 onClick={() => setDrawerTab('actions')}
                 className={`py-3 px-4 text-xs font-bold border-b-2 flex items-center gap-1.5 transition ${
@@ -660,7 +950,7 @@ export const OfficerDashboardPage: React.FC = () => {
                 }`}
               >
                 <History className="w-3.5 h-3.5" />
-                <span>Lifecycle Flow & Audit</span>
+                <span>Lifecycle Flow & Tracker</span>
               </button>
               <button
                 onClick={() => setDrawerTab('notes')}
@@ -707,12 +997,12 @@ export const OfficerDashboardPage: React.FC = () => {
                         : 'text-slate-800'
                     }`}
                   >
-                    {selectedCase.deadlineDate}
+                    {formatDate(selectedCase.deadlineDate)}
                   </span>
                 </div>
                 <div>
                   <span className="text-slate-500 block">Complainant</span>
-                  <span className="font-semibold text-slate-800">{selectedCase.complainantName || 'Anonymous / Confidential'}</span>
+                  <span className="font-semibold text-slate-800">{selectedCase.complainantName || 'Confidential Student Filing'}</span>
                 </div>
               </div>
 
@@ -742,7 +1032,7 @@ export const OfficerDashboardPage: React.FC = () => {
                     <div className="flex items-center gap-2 mb-2">
                       <Building className="w-4 h-4 text-amber-700" />
                       <h4 className="text-xs font-bold uppercase tracking-wider text-amber-900">
-                        1. Demand Institution Explanation
+                        1. Demand Institution Explanation (Stage 6 Notice)
                       </h4>
                     </div>
                     <p className="text-xs text-slate-600 mb-3">
@@ -847,28 +1137,24 @@ export const OfficerDashboardPage: React.FC = () => {
                       </span>
                     </div>
                     <p className="text-xs text-slate-600 mb-3">
-                      Bureau officers can formulate formal findings and propose resolution terms. The case will move to "Resolution Recommended" for final review by the Administration Cell.
+                      Bureau officers formulate formal findings and propose resolution terms. The case moves to "Resolution Recommended" for final closure approval by the Administration Cell.
                     </p>
                     <form onSubmit={handleRecommendResolution} className="space-y-2">
                       <textarea
                         rows={3}
                         value={resolutionProposal}
                         onChange={e => setResolutionProposal(e.target.value)}
-                        placeholder="Enter comprehensive findings, verified facts, and recommended remedy (e.g. refund amount, warning letter, directive to institute)..."
+                        placeholder="Specify final resolution directives, refund orders, or compliance remediation mandates..."
                         className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                         required
                       />
-                      <div className="flex items-center justify-between pt-1">
-                        <p className="text-[11px] text-slate-500 flex items-center gap-1">
-                          <Lock className="w-3.5 h-3.5 text-slate-400" />
-                          Final case closure is restricted to Administration Portal
-                        </p>
+                      <div className="flex justify-end">
                         <button
                           type="submit"
-                          className="px-4 py-1.5 bg-emerald-700 text-white rounded text-xs font-bold hover:bg-emerald-800 transition shadow-sm flex items-center gap-1.5"
+                          className="px-4 py-2 bg-emerald-700 text-white rounded text-xs font-bold hover:bg-emerald-800 transition shadow-sm flex items-center gap-1.5"
                         >
                           <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>Submit Resolution for Closure</span>
+                          <span>Submit Resolution for Administrative Approval</span>
                         </button>
                       </div>
                     </form>
@@ -879,50 +1165,49 @@ export const OfficerDashboardPage: React.FC = () => {
               {/* TAB 2: Lifecycle Tracker */}
               {drawerTab === 'lifecycle' && (
                 <div className="space-y-4">
-                  <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
-                    <p className="text-xs text-slate-600">
-                      Standard AICTE 10-stage statutory complaint lifecycle progression. Click any stage node to inspect historical transitions and responsible cells.
-                    </p>
-                  </div>
-                  <ComplaintLifecycleTracker complaint={selectedCase} isPublic={false} showTimeline={true} />
+                  <ComplaintLifecycleTracker complaint={selectedCase} isPublic={false} />
                 </div>
               )}
 
-              {/* TAB 3: Confidential Notes */}
+              {/* TAB 3: Notes */}
               {drawerTab === 'notes' && (
                 <div className="space-y-4">
-                  <form onSubmit={handleAddNote} className="space-y-2 bg-slate-50 border border-slate-200 rounded-lg p-3">
-                    <span className="text-xs font-bold text-slate-700 block">Add Confidential Investigation Log</span>
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900 flex items-center gap-2">
+                    <Lock className="w-4 h-4 text-amber-700 shrink-0" />
+                    <span>Confidential Internal Deliberations — strictly restricted from complainant/public view.</span>
+                  </div>
+
+                  <form onSubmit={handleAddInternalNote} className="space-y-2">
                     <textarea
                       rows={2}
                       value={newNoteContent}
                       onChange={e => setNewNoteContent(e.target.value)}
-                      placeholder="Enter confidential facts, telephone inquiry summaries, or witness statements..."
-                      className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded focus:ring-2 focus:ring-[#0B477F] focus:outline-none"
+                      placeholder="Add confidential officer note or scrutiny findings..."
+                      className="w-full text-xs p-2.5 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-[#0B477F]"
                       required
                     />
                     <div className="flex justify-end">
                       <button
                         type="submit"
-                        className="px-3 py-1.5 bg-[#0B477F] text-white rounded text-xs font-semibold hover:bg-[#155A91] transition flex items-center gap-1"
+                        className="px-3 py-1.5 bg-[#0B477F] text-white text-xs font-semibold rounded hover:bg-[#155A91] transition flex items-center gap-1.5"
                       >
                         <MessageSquarePlus className="w-3.5 h-3.5" />
-                        <span>Record Internal Note</span>
+                        <span>Add Internal Note</span>
                       </button>
                     </div>
                   </form>
 
-                  <div className="space-y-2 mt-3">
+                  <div className="space-y-2 pt-2 border-t border-slate-200">
                     {selectedCaseNotes.length === 0 ? (
-                      <p className="text-xs text-slate-400 text-center py-6">No internal notes logged on this case file yet.</p>
+                      <p className="text-xs text-slate-400 text-center py-4">No internal notes recorded yet.</p>
                     ) : (
-                      selectedCaseNotes.map(note => (
-                        <div key={note.id} className="p-3 bg-white border border-slate-200 rounded-lg text-xs space-y-1">
-                          <div className="flex items-center justify-between text-slate-500">
-                            <span className="font-semibold text-slate-700">{note.authorName} ({note.authorRole})</span>
-                            <span>{note.timestamp.replace('T', ' ').slice(0, 16)}</span>
+                      selectedCaseNotes.map(n => (
+                        <div key={n.id} className="p-3 bg-slate-50 border border-slate-200 rounded text-xs space-y-1">
+                          <div className="flex items-center justify-between text-slate-500 text-[11px]">
+                            <span className="font-semibold text-slate-800">{n.authorName}</span>
+                            <span>{formatDate(n.timestamp)}</span>
                           </div>
-                          <p className="text-slate-800 whitespace-pre-wrap">{note.content}</p>
+                          <p className="text-slate-700 whitespace-pre-wrap">{n.content}</p>
                         </div>
                       ))
                     )}
@@ -930,57 +1215,44 @@ export const OfficerDashboardPage: React.FC = () => {
                 </div>
               )}
 
-              {/* TAB 4: Case Intelligence */}
+              {/* TAB 4: Intelligence */}
               {drawerTab === 'intel' && (
-                <div className="space-y-3">
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-900">
-                    <span className="font-bold flex items-center gap-1 mb-1">
-                      <Sparkles className="w-3.5 h-3.5 text-blue-700" />
-                      Cross-Bureau Pattern Intelligence
-                    </span>
-                    AICTE system has analyzed institution records, token similarities, and complaint narratives to detect correlated grievances.
+                <div className="space-y-4">
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-900 flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-blue-700 shrink-0" />
+                    <span>AI-Powered Cross-Case Pattern & Related Filing Intelligence</span>
                   </div>
 
                   {selectedCaseIntel.length === 0 ? (
-                    <div className="text-center py-8 text-xs text-slate-500 border border-slate-200 rounded-lg">
-                      <Shield className="w-6 h-6 text-slate-300 mx-auto mb-1" />
-                      No active cross-case relationships flagged for this complaint docket.
+                    <div className="py-8 text-center text-slate-400 text-xs">
+                      No related case patterns detected for this docket.
                     </div>
                   ) : (
-                    selectedCaseIntel.map(rel => (
-                      <div key={rel.id} className="border border-slate-200 rounded-lg p-3 bg-white space-y-2 text-xs">
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-slate-800">
-                            Pair Match: {rel.complaintId === selectedCase.id ? rel.relatedComplaintId : rel.complaintId}
-                          </span>
-                          <span className="px-2 py-0.5 bg-amber-100 text-amber-800 font-bold rounded">
-                            {Math.round(rel.overallScore)}% Similarity
-                          </span>
-                        </div>
-                        <p className="text-slate-600">{rel.explanation}</p>
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {rel.matchSignals?.map((sig: string) => (
-                            <span key={sig} className="px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded text-[10px]">
-                              {sig}
+                    <div className="space-y-2.5">
+                      {selectedCaseIntel.map(intel => (
+                        <div key={intel.id} className="p-3.5 border border-slate-200 rounded-lg bg-white space-y-2 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-slate-800">
+                              Linked with Case: <span className="font-mono text-[#0B477F]">{intel.relatedComplaintId}</span>
                             </span>
-                          ))}
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
+                              {Math.round(intel.overallScore || intel.textSimilarityScore)}% Match
+                            </span>
+                          </div>
+                          <p className="text-slate-600">{intel.explanation}</p>
+                          <div className="flex flex-wrap gap-1.5 pt-1">
+                            {intel.matchSignals.map((sig, i) => (
+                              <span key={i} className="px-1.5 py-0.5 rounded text-[10px] bg-slate-100 text-slate-700 font-medium">
+                                {sig}
+                              </span>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    ))
+                      ))}
+                    </div>
                   )}
                 </div>
               )}
-            </div>
-
-            {/* Drawer Footer */}
-            <div className="bg-slate-50 border-t border-slate-200 p-3 flex items-center justify-between text-xs text-slate-500">
-              <span>Case Reference: {selectedCase.id}</span>
-              <button
-                onClick={() => setSelectedCaseId(null)}
-                className="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded font-medium transition"
-              >
-                Close Drawer
-              </button>
             </div>
           </div>
         </div>

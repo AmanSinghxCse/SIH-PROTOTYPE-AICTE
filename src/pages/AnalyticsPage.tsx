@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useCaseTrack } from '../context/CaseTrackContext';
 import { getCaseAgeInDays, isOverdue } from '../utils/dateUtils';
 import {
@@ -29,6 +30,7 @@ import {
 } from 'recharts';
 
 export const AnalyticsPage: React.FC = () => {
+  const navigate = useNavigate();
   const { complaints, bureaus, institutions, relatedSuggestions } = useCaseTrack();
 
   // 1. Calculate Average Resolution Turnaround for resolved cases
@@ -146,40 +148,52 @@ export const AnalyticsPage: React.FC = () => {
 
       {/* KPI Highlights */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        <div className="p-4 bg-white rounded-xl shadow-xs border border-slate-200">
-          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+        <div
+          onClick={() => navigate('/registry?status=Resolved')}
+          className="p-4 bg-white rounded-xl shadow-xs border border-slate-200 hover:border-blue-300 hover:shadow-sm transition cursor-pointer group"
+        >
+          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block group-hover:text-blue-700">
             Avg Turnaround Time
           </span>
           <div className="text-3xl font-black text-blue-700 mt-1">{avgResolutionDays} Days</div>
-          <p className="text-[11px] text-slate-500 mt-0.5">Calculated across resolved files</p>
+          <p className="text-[11px] text-slate-500 mt-0.5">Calculated across resolved files • Click to view</p>
         </div>
 
-        <div className="p-4 bg-white rounded-xl shadow-xs border border-slate-200">
-          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+        <div
+          onClick={() => navigate('/registry?status=Resolved')}
+          className="p-4 bg-white rounded-xl shadow-xs border border-slate-200 hover:border-emerald-300 hover:shadow-sm transition cursor-pointer group"
+        >
+          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block group-hover:text-emerald-700">
             Resolution Efficiency
           </span>
           <div className="text-3xl font-black text-emerald-700 mt-1">
             {((resolvedCases.length / complaints.length) * 100).toFixed(0)}%
           </div>
-          <p className="text-[11px] text-slate-500 mt-0.5">{resolvedCases.length} of {complaints.length} concluded</p>
+          <p className="text-[11px] text-slate-500 mt-0.5">{resolvedCases.length} of {complaints.length} concluded • View files</p>
         </div>
 
-        <div className="p-4 bg-white rounded-xl shadow-xs border border-slate-200">
-          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+        <div
+          onClick={() => navigate('/institutions')}
+          className="p-4 bg-white rounded-xl shadow-xs border border-slate-200 hover:border-indigo-300 hover:shadow-sm transition cursor-pointer group"
+        >
+          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block group-hover:text-indigo-700">
             Institutional Coverage
           </span>
           <div className="text-3xl font-black text-slate-900 mt-1">{institutions.length}</div>
-          <p className="text-[11px] text-slate-500 mt-0.5">Monitored colleges & institutes</p>
+          <p className="text-[11px] text-slate-500 mt-0.5">Monitored colleges & institutes • View profiles</p>
         </div>
 
-        <div className="p-4 bg-white rounded-xl shadow-xs border border-slate-200">
-          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+        <div
+          onClick={() => navigate('/registry?filter=all')}
+          className="p-4 bg-white rounded-xl shadow-xs border border-slate-200 hover:border-blue-400 hover:shadow-sm transition cursor-pointer group"
+        >
+          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block group-hover:text-[#0B477F]">
             Cross-Case Correlation
           </span>
           <div className="text-3xl font-black text-[#0B477F] mt-1">
             {relatedSuggestions.length}
           </div>
-          <p className="text-[11px] text-slate-500 mt-0.5">{confirmedCount} confirmed by officers</p>
+          <p className="text-[11px] text-slate-500 mt-0.5">{confirmedCount} confirmed by officers • View cases</p>
         </div>
       </div>
 

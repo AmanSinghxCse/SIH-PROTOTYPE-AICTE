@@ -23,6 +23,7 @@ import {
   Search,
   HelpCircle,
   ShieldAlert,
+  AlertCircle,
   Lightbulb,
   Building,
   FileText,
@@ -123,6 +124,9 @@ export const AdminDashboardPage: React.FC = () => {
       c => c.status === 'Awaiting Institution Response' || c.institutionResponseRequested
     ).length;
     const awaitingAction = complaints.filter(c => c.status === 'Action & Investigation' || c.status === 'Escalated').length;
+    const highPriority = complaints.filter(
+      c => (c.priority === 'High' || c.priority === 'Critical' || c.priority === 'Urgent') && c.status !== 'Closed'
+    ).length;
     const overdue = complaints.filter(c => {
       if (c.status === 'Resolved' || c.status === 'Closed') return false;
       return c.deadlineDate && c.deadlineDate < today;
@@ -143,6 +147,7 @@ export const AdminDashboardPage: React.FC = () => {
       underReview,
       awaitingInstitutionResponse,
       awaitingAction,
+      highPriority,
       overdue,
       resolutionRecommended,
       awaitingClosureReview,
@@ -428,6 +433,7 @@ export const AdminDashboardPage: React.FC = () => {
             { label: 'Under Review', count: stats.underReview, sub: 'Inquiry Stage 5', link: '/registry?status=Under%20Review', icon: Eye, color: 'text-indigo-600', bg: 'bg-indigo-50' },
             { label: 'Awaiting Inst. Response', count: stats.awaitingInstitutionResponse, sub: 'Notice Stage 6', link: '/registry?filter=institution_response', icon: Building, color: 'text-purple-600', bg: 'bg-purple-50' },
             { label: 'Awaiting Admin Action', count: stats.awaitingAction, sub: 'Hearing & Committee', link: '/registry?filter=action', icon: ShieldAlert, color: 'text-rose-600', bg: 'bg-rose-50' },
+            { label: 'High-Priority Complaints', count: stats.highPriority, sub: 'Immediate attention', link: '/registry?priority=High', icon: AlertCircle, color: 'text-red-600', bg: 'bg-red-50' },
             { label: 'Overdue Complaints', count: stats.overdue, sub: 'SLA Exceeded', link: '/registry?overdue=true', icon: AlertTriangle, color: 'text-[#C43D3D]', bg: 'bg-rose-100' },
             { label: 'Resolution Recommended', count: stats.resolutionRecommended, sub: 'Findings concluded', link: '/registry?filter=resolution_recommended', icon: CheckCircle2, color: 'text-teal-600', bg: 'bg-teal-50' },
             { label: 'Awaiting Closure Review', count: stats.awaitingClosureReview, sub: 'Final Sanction', link: '/registry?filter=closure_review', icon: ShieldCheck, color: 'text-amber-700', bg: 'bg-amber-100' },
