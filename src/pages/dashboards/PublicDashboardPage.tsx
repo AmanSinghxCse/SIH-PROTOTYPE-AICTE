@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useCaseTrack } from '../../context/CaseTrackContext';
 import { ComplaintLifecycleTracker } from '../../components/workflow/ComplaintLifecycleTracker';
 import {
@@ -20,13 +20,21 @@ import {
 
 export const PublicDashboardPage: React.FC = () => {
   const { currentUser, complaints, timelineEvents, addNote } = useCaseTrack();
+  const [searchParams] = useSearchParams();
 
-  const [searchToken, setSearchToken] = useState('');
+  const [searchToken, setSearchToken] = useState(() => searchParams.get('track') || '');
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
   const [responseModalOpen, setResponseModalOpen] = useState(false);
   const [responseText, setResponseText] = useState('');
   const [activeComplaintForResponse, setActiveComplaintForResponse] = useState<string | null>(null);
   const [responseSuccessMsg, setResponseSuccessMsg] = useState(false);
+
+  useEffect(() => {
+    const trackParam = searchParams.get('track');
+    if (trackParam) {
+      setSearchToken(trackParam);
+    }
+  }, [searchParams]);
 
   // Filter complaints that belong to the current public user
   const myComplaints = useMemo(() => {

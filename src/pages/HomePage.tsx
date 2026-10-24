@@ -56,10 +56,9 @@ export const HomePage: React.FC = () => {
     );
 
     if (found) {
-      navigate(`/case/${found.id}`);
+      navigate(`/portal/public?track=${encodeURIComponent(found.id)}`);
     } else {
-      // Navigate to registry with search query
-      navigate(`/registry?search=${encodeURIComponent(query)}`);
+      setTrackError(`No active complaint record found matching "${trackInput.trim()}". Please verify the Complaint ID (e.g. AICTE-2026-COMP-104).`);
     }
   };
 
@@ -243,17 +242,17 @@ export const HomePage: React.FC = () => {
         </div>
       </section>
 
-      {/* 3. Choose Your Portal Section */}
+      {/* 3. Choose Your Portal Section (Exactly Three Portals) */}
       <section className="space-y-4">
         <div className="text-center space-y-1">
-          <h2 className="text-xl font-bold text-[#17324D]">Choose Your Portal</h2>
+          <h2 className="text-xl font-bold text-[#17324D]">Select Your Authorized Portal</h2>
           <p className="text-xs text-[#53677D]">
-            Tailored interfaces for students, faculty, scrutiny staff, and government oversight.
+            Dedicated interfaces for Citizens/Students, Central Administration, and Bureau Inquiry Officers.
           </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Public Portal */}
+          {/* 1. Public Portal */}
           <div className="p-6 bg-white rounded-xl border-t-4 border-t-[#0B477F] border-x border-b border-[#D6E4F0] shadow-xs space-y-4 flex flex-col justify-between interactive-card">
             <div className="space-y-3">
               <div className="w-12 h-12 rounded-full bg-[#E5F1FC] flex items-center justify-center text-[#0B477F]">
@@ -261,54 +260,62 @@ export const HomePage: React.FC = () => {
               </div>
               <h3 className="text-base font-bold text-[#17324D]">Public Portal</h3>
               <p className="text-xs text-[#53677D] leading-relaxed">
-                For students, parents, faculty, and citizens to register institution grievances and follow case status transparently.
+                For students, parents, faculty, and citizens to register grievances, track live status, inspect 10-stage milestones, and respond to inquiries.
               </p>
             </div>
-            <button
-              onClick={() => navigate('/register')}
-              className="w-full py-2.5 px-4 rounded-lg bg-[#0B477F] text-white hover:bg-[#155A91] text-xs font-semibold shadow-xs transition-colors flex items-center justify-center gap-1.5"
-            >
-              <span>File New Grievance (Form 1A)</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
+            <div className="space-y-2">
+              <button
+                onClick={() => navigate('/portal/public')}
+                className="w-full py-2.5 px-4 rounded-lg bg-[#0B477F] text-white hover:bg-[#155A91] text-xs font-semibold shadow-xs transition-colors flex items-center justify-center gap-1.5"
+              >
+                <span>Enter Public Dashboard</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => navigate('/register')}
+                className="w-full py-2 px-4 rounded-lg bg-slate-50 border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-medium transition-colors flex items-center justify-center gap-1.5"
+              >
+                <span>File New Complaint (Form 1A)</span>
+              </button>
+            </div>
           </div>
 
-          {/* Staff Portal */}
-          <div className="p-6 bg-white rounded-xl border-t-4 border-t-[#237A50] border-x border-b border-[#D6E4F0] shadow-xs space-y-4 flex flex-col justify-between interactive-card">
+          {/* 2. Administration Portal */}
+          <div className="p-6 bg-white rounded-xl border-t-4 border-t-blue-700 border-x border-b border-[#D6E4F0] shadow-xs space-y-4 flex flex-col justify-between interactive-card">
             <div className="space-y-3">
-              <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center text-[#237A50]">
+              <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center text-blue-700">
                 <ShieldCheck className="w-6 h-6" />
               </div>
-              <h3 className="text-base font-bold text-[#17324D]">Bureau Staff Portal</h3>
+              <h3 className="text-base font-bold text-[#17324D]">Administration Portal</h3>
               <p className="text-xs text-[#53677D] leading-relaxed">
-                For AICTE bureau officers and scrutiny teams to review filings, conduct inquiries, assign cases, and update milestones.
+                Central command for case allocations, cross-bureau transfers, priority & deadline governance, institution intelligence, closure sign-offs, and audit trails.
               </p>
             </div>
             <button
-              onClick={() => navigate('/dashboard')}
-              className="w-full py-2.5 px-4 rounded-lg bg-[#237A50] text-white hover:bg-emerald-800 text-xs font-semibold shadow-xs transition-colors flex items-center justify-center gap-1.5"
+              onClick={() => navigate('/portal/admin')}
+              className="w-full py-2.5 px-4 rounded-lg bg-blue-700 text-white hover:bg-blue-800 text-xs font-semibold shadow-xs transition-colors flex items-center justify-center gap-1.5"
             >
-              <span>Enter Bureau Dashboard</span>
+              <span>Enter Administration Portal</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
 
-          {/* Government Agency Portal */}
-          <div className="p-6 bg-white rounded-xl border-t-4 border-t-[#D97706] border-x border-b border-[#D6E4F0] shadow-xs space-y-4 flex flex-col justify-between interactive-card">
+          {/* 3. Bureau Officer Portal */}
+          <div className="p-6 bg-white rounded-xl border-t-4 border-t-indigo-700 border-x border-b border-[#D6E4F0] shadow-xs space-y-4 flex flex-col justify-between interactive-card">
             <div className="space-y-3">
-              <div className="w-12 h-12 rounded-full bg-amber-50 flex items-center justify-center text-[#D97706]">
+              <div className="w-12 h-12 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-700">
                 <Building2 className="w-6 h-6" />
               </div>
-              <h3 className="text-base font-bold text-[#17324D]">Regulatory & Agency Portal</h3>
+              <h3 className="text-base font-bold text-[#17324D]">Bureau Officer Portal</h3>
               <p className="text-xs text-[#53677D] leading-relaxed">
-                For Ministry of Education observers, appellate authorities, and AICTE leadership to evaluate longitudinal compliance.
+                Dedicated investigation workspace for authorized bureau officers to examine evidence, issue statutory explanation notices, record replies, and formulate resolutions.
               </p>
             </div>
             <button
-              onClick={() => navigate('/analytics')}
-              className="w-full py-2.5 px-4 rounded-lg bg-[#D97706] text-white hover:bg-amber-700 text-xs font-semibold shadow-xs transition-colors flex items-center justify-center gap-1.5"
+              onClick={() => navigate('/portal/officer')}
+              className="w-full py-2.5 px-4 rounded-lg bg-indigo-700 text-white hover:bg-indigo-800 text-xs font-semibold shadow-xs transition-colors flex items-center justify-center gap-1.5"
             >
-              <span>View Management Analytics</span>
+              <span>Enter Bureau Officer Portal</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>

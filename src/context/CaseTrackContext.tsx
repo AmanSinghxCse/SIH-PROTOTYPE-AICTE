@@ -223,6 +223,10 @@ export const CaseTrackProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     localStorage.setItem(`${STORAGE_KEY_PREFIX}milestones`, JSON.stringify(milestones));
   }, [milestones]);
 
+  useEffect(() => {
+    localStorage.setItem(`${STORAGE_KEY_PREFIX}users`, JSON.stringify(users));
+  }, [users]);
+
   const updateMilestoneStatus = (id: number, newStatus: MilestoneStatus) => {
     setMilestones(prev =>
       prev.map(m =>
@@ -439,7 +443,13 @@ export const CaseTrackProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       lastUpdatedDate: today,
       sourceChannel: draft.sourceChannel || 'Online Portal',
       referenceNumber: draft.referenceNumber || `REG-DEMO-${Date.now().toString().slice(-4)}`,
-      tags: draft.tags || ['new-filing', draft.category.toLowerCase().split(' ')[0]]
+      tags: draft.tags || ['new-filing', draft.category.toLowerCase().split(' ')[0]],
+      complainantName: draft.complainantName || currentUser.name || 'Ananya Sharma (Student / Complainant)',
+      complainantEmail: draft.complainantEmail || currentUser.email || 'ananya.sharma@student-demo.in',
+      complainantPhone: draft.complainantPhone || currentUser.phone || '+91-98765-43210',
+      attachments: draft.attachments || [],
+      currentStageId: 1,
+      verificationStatus: 'Pending'
     };
 
     setComplaints(prev => [newComplaint, ...prev]);

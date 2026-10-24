@@ -66,12 +66,28 @@ export const RegistryPage: React.FC = () => {
     const filterParam = searchParams.get('filter');
     const overdueParam = searchParams.get('overdue');
     const approachingParam = searchParams.get('approaching');
+    const priorityParam = searchParams.get('priority');
+    const searchParam = searchParams.get('search');
+    const categoryParam = searchParams.get('category');
+    const bureauParam = searchParams.get('bureau');
 
     if (statusParam !== null) {
       setFilterStatus(statusParam);
     }
     if (filterParam !== null) {
       setSpecialFilter(filterParam);
+    }
+    if (priorityParam !== null) {
+      setFilterPriority(priorityParam);
+    }
+    if (searchParam !== null) {
+      setSearchTerm(searchParam);
+    }
+    if (categoryParam !== null) {
+      setFilterCategory(categoryParam);
+    }
+    if (bureauParam !== null) {
+      setFilterBureau(bureauParam);
     }
     setOnlyOverdue(overdueParam === 'true');
     setOnlyApproaching(approachingParam === 'true');
@@ -213,7 +229,9 @@ export const RegistryPage: React.FC = () => {
     setSearchTerm('');
     setFilterBureau('ALL');
     setFilterStatus('ALL');
+    setFilterCategory('ALL');
     setFilterPriority('ALL');
+    setSpecialFilter('ALL');
     setOnlyOverdue(false);
     setOnlyApproaching(false);
     setCurrentPage(1);

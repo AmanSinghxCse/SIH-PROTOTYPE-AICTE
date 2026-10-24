@@ -56,10 +56,27 @@ export const AdminDashboardPage: React.FC = () => {
     reopenComplaint,
     users,
     addUser,
-    auditLogs
+    auditLogs,
+    settings,
+    updateSettings,
+    updateComplaintDeadline
   } = useCaseTrack();
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'verification' | 'supervision' | 'analytics' | 'users'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'verification' | 'supervision' | 'analytics' | 'users' | 'sla'>('overview');
+
+  // SLA & Priority Governance State
+  const [slaNormal, setSlaNormal] = useState(settings?.defaultDeadlineNormal || 30);
+  const [slaUrgent, setSlaUrgent] = useState(settings?.defaultDeadlineUrgent || 14);
+  const [approachingDays, setApproachingDays] = useState(settings?.approachingDeadlineDays || 3);
+  const [escalationDays, setEscalationDays] = useState(settings?.overdueEscalationDays || 5);
+  const [similarityThresh, setSimilarityThresh] = useState(settings?.similarityThreshold || 55);
+  const [slaSavedMsg, setSlaSavedMsg] = useState(false);
+
+  // Individual Case Deadline Extension State
+  const [dlCaseId, setDlCaseId] = useState(complaints[0]?.id || '');
+  const [newDlDate, setNewDlDate] = useState('2026-11-20');
+  const [dlReason, setDlReason] = useState('');
+  const [dlSavedMsg, setDlSavedMsg] = useState(false);
 
   // Staff User Management State
   const [newUserName, setNewUserName] = useState('');
@@ -500,6 +517,18 @@ export const AdminDashboardPage: React.FC = () => {
         >
           <Users className="w-4 h-4 text-blue-600" />
           <span>Staff Accounts & Roles ({users.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('sla')}
+          className={`px-4 py-2.5 text-xs font-bold rounded-t-lg transition-colors border-b-2 flex items-center gap-2 ${
+            activeTab === 'sla'
+              ? 'border-[#0B477F] text-[#0B477F] bg-white shadow-xs'
+              : 'border-transparent text-[#53677D] hover:text-[#17324D]'
+          }`}
+        >
+          <Clock className="w-4 h-4 text-orange-600" />
+          <span>Priority & SLA Governance</span>
         </button>
       </div>
 
@@ -1246,6 +1275,204 @@ export const AdminDashboardPage: React.FC = () => {
                   className="w-full py-2.5 px-4 bg-[#0B477F] hover:bg-[#064578] text-white rounded-lg font-bold shadow-xs transition-colors mt-2"
                 >
                   Create & Authorize Account
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 6: SLA & Priority Governance */}
+      {activeTab === 'sla' && (
+        <div className="space-y-8 animate-fadeIn">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Card 1: Configurable SLA & Redressal Rules */}
+            <div className="bg-white rounded-xl border border-[#D6E4F0] p-6 shadow-xs space-y-4">
+              <div className="flex items-center gap-2">
+                <Clock className="w-5 h-5 text-[#0B477F]" />
+                <div>
+                  <h3 className="text-base font-bold text-[#17324D]">Statutory SLA & Priority Rules</h3>
+                  <p className="text-xs text-[#53677D]">Configure institutional complaint timelines and alert thresholds.</p>
+                </div>
+              </div>
+
+              {slaSavedMsg && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800 font-semibold flex items-center gap-2">
+                  <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>SLA rules successfully updated and synchronized across all bureaus!</span>
+                </div>
+              )}
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  updateSettings({
+                    defaultDeadlineNormal: Number(slaNormal),
+                    defaultDeadlineUrgent: Number(slaUrgent),
+                    approachingDeadlineDays: Number(approachingDays),
+                    overdueEscalationDays: Number(escalationDays),
+                    similarityThreshold: Number(similarityThresh)
+                  });
+                  setSlaSavedMsg(true);
+                  setTimeout(() => setSlaSavedMsg(false), 3000);
+                }}
+                className="space-y-4 text-xs"
+              >
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block font-bold text-[#17324D] mb-1">Normal Priority SLA (Days)</label>
+                    <input
+                      type="number"
+                      min={7}
+                      max={90}
+                      value={slaNormal}
+                      onChange={(e) => setSlaNormal(Number(e.target.value))}
+                      className="w-full p-2 border border-[#D6E4F0] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#0B477F]"
+                    />
+                    <p className="text-[10px] text-[#53677D] mt-0.5">Standard grievance target</p>
+                  </div>
+                  <div>
+                    <label className="block font-bold text-[#17324D] mb-1">Urgent / Critical SLA (Days)</label>
+                    <input
+                      type="number"
+                      min={3}
+                      max={30}
+                      value={slaUrgent}
+                      onChange={(e) => setSlaUrgent(Number(e.target.value))}
+                      className="w-full p-2 border border-[#D6E4F0] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#0B477F]"
+                    />
+                    <p className="text-[10px] text-[#53677D] mt-0.5">High-priority & ragging target</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block font-bold text-[#17324D] mb-1">Approaching Alert Window (Days)</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={14}
+                      value={approachingDays}
+                      onChange={(e) => setApproachingDays(Number(e.target.value))}
+                      className="w-full p-2 border border-[#D6E4F0] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#0B477F]"
+                    />
+                    <p className="text-[10px] text-[#53677D] mt-0.5">Warning trigger before deadline</p>
+                  </div>
+                  <div>
+                    <label className="block font-bold text-[#17324D] mb-1">Overdue Escalation Trigger (Days)</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={20}
+                      value={escalationDays}
+                      onChange={(e) => setEscalationDays(Number(e.target.value))}
+                      className="w-full p-2 border border-[#D6E4F0] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#0B477F]"
+                    />
+                    <p className="text-[10px] text-[#53677D] mt-0.5">Escalate to Member Secretary</p>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-[#17324D] mb-1">
+                    Related Case Heuristic Threshold ({similarityThresh}%)
+                  </label>
+                  <input
+                    type="range"
+                    min={30}
+                    max={90}
+                    value={similarityThresh}
+                    onChange={(e) => setSimilarityThresh(Number(e.target.value))}
+                    className="w-full accent-[#0B477F]"
+                  />
+                  <div className="flex justify-between text-[10px] text-[#53677D]">
+                    <span>Broad Match (30%)</span>
+                    <span>Standard (55%)</span>
+                    <span>Strict Match (90%)</span>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-2.5 px-4 bg-[#0B477F] hover:bg-[#155A91] text-white rounded-lg font-bold shadow-xs transition-colors"
+                >
+                  Save Statutory SLA Rules
+                </button>
+              </form>
+            </div>
+
+            {/* Card 2: Individual Case Deadline Extension Tool */}
+            <div className="bg-white rounded-xl border border-[#D6E4F0] p-6 shadow-xs space-y-4">
+              <div className="flex items-center gap-2">
+                <History className="w-5 h-5 text-indigo-700" />
+                <div>
+                  <h3 className="text-base font-bold text-[#17324D]">Statutory Deadline Modification</h3>
+                  <p className="text-xs text-[#53677D]">Authorize deadline extensions with mandatory regulatory justification.</p>
+                </div>
+              </div>
+
+              {dlSavedMsg && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800 font-semibold flex items-center gap-2">
+                  <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Deadline extension recorded in case history and audit log!</span>
+                </div>
+              )}
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!dlCaseId || !newDlDate || !dlReason.trim()) return;
+                  updateComplaintDeadline(dlCaseId, newDlDate, dlReason.trim());
+                  setDlSavedMsg(true);
+                  setDlReason('');
+                  setTimeout(() => setDlSavedMsg(false), 3500);
+                }}
+                className="space-y-3 text-xs"
+              >
+                <div>
+                  <label className="block font-bold text-[#17324D] mb-1">Select Active Case Docket</label>
+                  <select
+                    value={dlCaseId}
+                    onChange={(e) => setDlCaseId(e.target.value)}
+                    className="w-full p-2 border border-[#D6E4F0] rounded-lg focus:outline-none"
+                  >
+                    {complaints
+                      .filter((c) => c.status !== 'Closed')
+                      .map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.id} - {c.institutionName.slice(0, 30)}... (Current SLA: {c.deadlineDate})
+                        </option>
+                      ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-[#17324D] mb-1">Revised Target Deadline</label>
+                  <input
+                    type="date"
+                    required
+                    value={newDlDate}
+                    onChange={(e) => setNewDlDate(e.target.value)}
+                    className="w-full p-2 border border-[#D6E4F0] rounded-lg focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-[#17324D] mb-1">Official Regulatory Reason / Justification *</label>
+                  <textarea
+                    rows={3}
+                    required
+                    value={dlReason}
+                    onChange={(e) => setDlReason(e.target.value)}
+                    placeholder="Enter formal justification (e.g., Awaiting response to AICTE Show-Cause Notice ref AICTE/GRV/2026/88)..."
+                    className="w-full p-2 border border-[#D6E4F0] rounded-lg focus:outline-none"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-2.5 px-4 bg-indigo-700 hover:bg-indigo-800 text-white rounded-lg font-bold shadow-xs transition-colors"
+                >
+                  Authorize Deadline Extension & Record Audit
                 </button>
               </form>
             </div>

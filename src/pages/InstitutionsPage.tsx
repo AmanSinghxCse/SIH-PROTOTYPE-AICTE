@@ -214,6 +214,17 @@ export const InstitutionsPage: React.FC = () => {
                 {activeInstitution.contactPhone}
               </span>
             </div>
+
+            {/* Statutory Disclaimer & Average Resolution Speed */}
+            <div className="bg-[#F1F7FC] border border-[#D6E4F0] rounded-lg p-3 text-[11px] text-[#53677D] space-y-1">
+              <div className="flex items-center gap-1.5 font-bold text-[#0B477F]">
+                <ShieldCheck className="w-4 h-4" />
+                <span>Statutory Regulatory Notice:</span>
+              </div>
+              <p>
+                The number of registered complaints reflects public intake and must not automatically be interpreted as proof of institutional wrongdoing until formal inquiry findings and official disposal directives are issued by the competent council authority.
+              </p>
+            </div>
           </div>
 
           {/* Associated Complaints List */}

@@ -72,8 +72,37 @@ export const CaseDetailPage: React.FC = () => {
     );
   }
 
+  const isPublicUser = currentUser.role === 'public';
+  const isOfficer = currentUser.role === 'bureau_officer' || currentUser.role === 'officer';
+  const isAdmin = currentUser.role === 'admin';
+
+  // Bureau scoping check: Bureau Officers can only inspect cases within their bureau jurisdiction
+  const isOfficerUnauthorized = isOfficer && currentUser.bureauId && complaint.bureauId && complaint.bureauId !== currentUser.bureauId && complaint.assignedOfficerId !== currentUser.id;
+
+  if (isOfficerUnauthorized) {
+    return (
+      <div className="p-12 text-center bg-white rounded-xl border border-slate-200 space-y-4 max-w-xl mx-auto my-8">
+        <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-full flex items-center justify-center mx-auto border border-amber-200">
+          <ShieldCheck className="w-6 h-6" />
+        </div>
+        <h2 className="text-lg font-bold text-slate-800">Jurisdiction Scoped to Your Bureau</h2>
+        <p className="text-xs text-slate-600 leading-relaxed">
+          Case <strong>{complaint.id}</strong> is assigned to <strong>{complaint.bureauName}</strong>.
+          Under AICTE operational guidelines, Bureau Officers can only access cases assigned to their authorized bureau ({currentUser.bureauName || currentUser.bureauId}).
+        </p>
+        <button
+          onClick={() => navigate('/portal/officer')}
+          className="px-4 py-2 text-xs font-semibold text-white bg-[#0B477F] rounded-lg hover:bg-[#155A91]"
+        >
+          Return to Your Bureau Queue
+        </button>
+      </div>
+    );
+  }
+
   const institution = institutions.find(i => i.id === complaint.institutionId) || institutions[0];
   const caseTimeline = timelineEvents[complaint.id] || [];
+  const publicCaseTimeline = caseTimeline.filter(e => e.type !== 'NOTE_ADDED' || e.title.includes('Public') || e.title.includes('Information'));
   const caseNotes = notes[complaint.id] || [];
   const caseSuggestions = relatedSuggestions.filter(
     s => s.complaintId === complaint.id || s.relatedComplaintId === complaint.id
@@ -86,20 +115,34 @@ export const CaseDetailPage: React.FC = () => {
   const approaching = isApproachingDeadline(complaint.deadlineDate, complaint.status, settings.approachingDeadlineDays);
   const age = getCaseAgeInDays(complaint.submissionDate, complaint.resolvedDate);
 
+  const availableTabs = isPublicUser
+    ? [
+        { key: 'overview', label: 'Grievance Particulars', icon: FileText },
+        { key: 'timeline', label: `Public Progress Timeline (${publicCaseTimeline.length})`, icon: Clock }
+      ]
+    : [
+        { key: 'overview', label: 'Overview', icon: FileText },
+        { key: 'timeline', label: `Timeline (${caseTimeline.length})`, icon: Clock },
+        { key: 'assignment', label: 'Assignment & Status', icon: UserCheck },
+        { key: 'related', label: `Related Cases (${caseSuggestions.length})`, icon: GitCompare },
+        { key: 'notes', label: `Notes & Follow-ups (${caseNotes.length})`, icon: MessageSquare },
+        { key: 'audit', label: `Audit Trail (${caseAuditLogs.length})`, icon: ShieldCheck }
+      ];
+
   return (
     <div className="space-y-6 animate-fadeIn">
       {/* Top Breadcrumb & Navigation */}
       <div className="flex items-center justify-between">
         <button
-          onClick={() => navigate('/registry')}
+          onClick={() => navigate(isPublicUser ? '/portal/public' : isOfficer ? '/portal/officer' : '/registry')}
           className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-900 font-medium transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Back to Complaint Registry</span>
+          <span>{isPublicUser ? 'Back to Public Portal' : isOfficer ? 'Back to Bureau Queue' : 'Back to Complaint Registry'}</span>
         </button>
 
         <div className="flex items-center gap-2">
-          {hasPermission('change_status') && (
+          {!isPublicUser && hasPermission('change_status') && (
             <button
               onClick={() => setIsStatusModalOpen(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm transition-all"
@@ -109,7 +152,7 @@ export const CaseDetailPage: React.FC = () => {
             </button>
           )}
 
-          {hasPermission('assign_case') && (
+          {!isPublicUser && hasPermission('assign_case') && (
             <button
               onClick={() => setIsAssignModalOpen(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg transition-colors"
@@ -119,7 +162,7 @@ export const CaseDetailPage: React.FC = () => {
             </button>
           )}
 
-          {currentUser.role !== 'management' && (
+          {!isPublicUser && currentUser.role !== 'management' && (
             <button
               onClick={() => setIsNoteModalOpen(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg transition-colors"
@@ -221,14 +264,7 @@ export const CaseDetailPage: React.FC = () => {
 
       {/* Tabs Navigation */}
       <div className="border-b border-slate-200 flex items-center gap-1 overflow-x-auto text-xs font-semibold">
-        {[
-          { key: 'overview', label: 'Overview', icon: FileText },
-          { key: 'timeline', label: `Timeline (${caseTimeline.length})`, icon: Clock },
-          { key: 'assignment', label: 'Assignment & Status', icon: UserCheck },
-          { key: 'related', label: `Related Cases (${caseSuggestions.length})`, icon: GitCompare },
-          { key: 'notes', label: `Notes & Follow-ups (${caseNotes.length})`, icon: MessageSquare },
-          { key: 'audit', label: `Audit Trail (${caseAuditLogs.length})`, icon: ShieldCheck }
-        ].map(t => {
+        {availableTabs.map(t => {
           const Icon = t.icon;
           const isActive = activeTab === t.key;
           return (
@@ -336,7 +372,7 @@ export const CaseDetailPage: React.FC = () => {
           </div>
 
           <div className="relative pl-6 space-y-6 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
-            {caseTimeline.map((evt, idx) => (
+            {(isPublicUser ? publicCaseTimeline : caseTimeline).map((evt, idx) => (
               <div key={evt.id || idx} className="relative group">
                 <div className="absolute -left-6 top-1 w-4 h-4 rounded-full bg-blue-600 ring-4 ring-white border-2 border-blue-400"></div>
                 <div className="p-4 bg-slate-50 rounded-xl border border-slate-200/80 space-y-1">
@@ -347,7 +383,7 @@ export const CaseDetailPage: React.FC = () => {
                   <p className="text-xs text-slate-600 leading-relaxed">{evt.description}</p>
                   <div className="text-[11px] text-slate-400 pt-1 flex items-center gap-1.5">
                     <span>Recorded by:</span>
-                    <strong className="text-slate-600">{evt.actorName}</strong>
+                    <strong className="text-slate-600">{isPublicUser ? 'Official Scrutiny Desk' : evt.actorName}</strong>
                     <span>({evt.actorRole})</span>
                   </div>
                 </div>
