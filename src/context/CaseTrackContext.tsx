@@ -13,7 +13,10 @@ import {
   ComplaintStatus,
   ProjectMilestone,
   MilestoneStatus,
-  LifecycleStage
+  LifecycleStage,
+  TaskItem,
+  ComplaintPriority,
+  AssignmentHistoryRecord
 } from '../types';
 import {
   INITIAL_USERS,
@@ -29,6 +32,69 @@ import {
   INITIAL_LIFECYCLE_STAGES
 } from '../data/seedData';
 import { calculateRelatedness } from '../utils/matchingEngine';
+
+export const INITIAL_TASKS: TaskItem[] = [
+  {
+    id: 'TASK-001',
+    complaintId: 'CMP-2026-003',
+    complaintTitle: 'Excess Examination & Marksheet Release Fee Demand',
+    institutionName: 'Apex Institute of Technology & Management',
+    title: 'Urgent: Dispatch reminder notice for delayed refund compliance',
+    description: 'Institution deadline expired without submission of refund statement to student.',
+    assignedToId: 'USR-OFFICER-01',
+    assignedToName: 'Smt. Sunita Verma',
+    priority: 'Critical',
+    dueDate: '2026-10-24',
+    completed: false,
+    createdAt: '2026-10-20',
+    category: 'Fee Irregularity & Caution Refund'
+  },
+  {
+    id: 'TASK-002',
+    complaintId: 'CMP-2026-001',
+    complaintTitle: 'Severe Faculty Shortage and Unqualified Instructors in AI Dept',
+    institutionName: 'Aryavart Engineering College',
+    title: 'Review compliance rejoinder submitted by college administration',
+    description: 'Verify faculty appointment letters and AISHE cadre ratios against AICTE Approval Handbook.',
+    assignedToId: 'USR-OFFICER-01',
+    assignedToName: 'Smt. Sunita Verma',
+    priority: 'High',
+    dueDate: '2026-10-28',
+    completed: false,
+    createdAt: '2026-10-21',
+    category: 'Academic Administration & Faculty'
+  },
+  {
+    id: 'TASK-003',
+    complaintId: 'CMP-2026-004',
+    complaintTitle: 'Sub-Standard Laboratory Equipment in Metallurgy Lab',
+    institutionName: 'Kalinga Institute of Polytechnic',
+    title: 'Schedule on-site expert committee inspection',
+    description: 'Coordinate with Regional Office for surprise physical audit of laboratory apparatus.',
+    assignedToId: 'USR-ADMIN-01',
+    assignedToName: 'Shri Arvind Saxena',
+    priority: 'Medium',
+    dueDate: '2026-11-05',
+    completed: false,
+    createdAt: '2026-10-22',
+    category: 'Infrastructure & Labs'
+  },
+  {
+    id: 'TASK-004',
+    complaintId: 'CMP-2026-002',
+    complaintTitle: 'Capitation Fee and Non-Refundable Security Deposit',
+    institutionName: 'Kalinga Institute of Polytechnic',
+    title: 'Prepare final closure sanction docket for Nodal Sign-off',
+    description: 'College has refunded complete caution deposit of Rs 45,000 with student receipt attached.',
+    assignedToId: 'USR-OFFICER-01',
+    assignedToName: 'Smt. Sunita Verma',
+    priority: 'High',
+    dueDate: '2026-10-25',
+    completed: false,
+    createdAt: '2026-10-19',
+    category: 'Fee Irregularity & Caution Refund'
+  }
+];
 
 export type PermissionAction =
   | 'edit_case'
@@ -49,7 +115,7 @@ interface CaseTrackContextType {
   currentUser: User;
   isAuthenticated: boolean;
   activePortal: 'public' | 'admin' | 'bureau_officer';
-  login: (email: string, password: string, portal: 'admin' | 'bureau_officer') => Promise<{ success: boolean; error?: string }>;
+  login: (email: string, password: string, portal?: 'admin' | 'bureau_officer') => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   switchUserRole: (role: UserRole) => void;
   institutions: Institution[];
@@ -64,6 +130,12 @@ interface CaseTrackContextType {
   milestones: ProjectMilestone[];
   lifecycleStages: LifecycleStage[];
   updateMilestoneStatus: (id: number, newStatus: MilestoneStatus) => void;
+  tasks: TaskItem[];
+  addTask: (task: Omit<TaskItem, 'id' | 'createdAt' | 'completed'>) => boolean;
+  toggleTask: (taskId: string) => boolean;
+  deleteTask: (taskId: string) => boolean;
+  bulkAssignComplaints: (complaintIds: string[], bureauId: string, officerId: string, notes?: string) => boolean;
+  bulkUpdatePriority: (complaintIds: string[], newPriority: ComplaintPriority, reason: string) => boolean;
 
   // Actions
   addComplaint: (draft: any) => Complaint | null;
@@ -268,18 +340,139 @@ export const CaseTrackProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         return true; // Anyone can register a complaint
 
       case 'view_all_complaints':
-        return isAuthenticated && isAdmin;
+        return isAuthenticated && (isAdmin || isOfficer);
 
       default:
         return false;
     }
   };
 
-  // Secure Portal Login
+  // Administration Tasks State
+  const [tasks, setTasks] = useState<TaskItem[]>(() => {
+    const saved = localStorage.getItem(`${STORAGE_KEY_PREFIX}tasks`);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return INITIAL_TASKS;
+      }
+    }
+    return INITIAL_TASKS;
+  });
+
+  useEffect(() => {
+    localStorage.setItem(`${STORAGE_KEY_PREFIX}tasks`, JSON.stringify(tasks));
+  }, [tasks]);
+
+  const addTask = (newTask: Omit<TaskItem, 'id' | 'createdAt' | 'completed'>) => {
+    const item: TaskItem = {
+      ...newTask,
+      id: `TASK-${Date.now().toString().slice(-4)}`,
+      createdAt: '2026-10-24',
+      completed: false
+    };
+    setTasks(prev => [item, ...prev]);
+    addAuditLogEntry({
+      action: 'Administrative Task Created',
+      entityType: 'Complaint',
+      entityId: item.complaintId || item.id,
+      details: `New task created: "${item.title}" assigned to ${item.assignedToName}`
+    });
+    return true;
+  };
+
+  const toggleTask = (taskId: string) => {
+    setTasks(prev =>
+      prev.map(t =>
+        t.id === taskId
+          ? {
+              ...t,
+              completed: !t.completed,
+              completedAt: !t.completed ? '2026-10-24T17:00:00Z' : undefined,
+              completedBy: !t.completed ? currentUser.name : undefined
+            }
+          : t
+      )
+    );
+    return true;
+  };
+
+  const deleteTask = (taskId: string) => {
+    setTasks(prev => prev.filter(t => t.id !== taskId));
+    return true;
+  };
+
+  const bulkAssignComplaints = (complaintIds: string[], bureauId: string, officerId: string, notes?: string) => {
+    const b = bureaus.find(x => x.id === bureauId) || bureaus[0];
+    const off = users.find(x => x.id === officerId) || users[0];
+    const now = '2026-10-24';
+
+    setComplaints(prev =>
+      prev.map(c => {
+        if (!complaintIds.includes(c.id)) return c;
+        const newAssignmentHistory: AssignmentHistoryRecord[] = [
+          ...(c.assignmentHistory || []),
+          {
+            id: `ASG-${Date.now()}-${c.id}`,
+            previousBureauId: c.bureauId,
+            newBureauId: b.id,
+            previousOfficerId: c.assignedOfficerId,
+            newOfficerId: off.id,
+            reason: notes || 'Bulk allocation by Nodal Administration',
+            assignedAt: now,
+            assignedBy: currentUser.name
+          }
+        ];
+        return {
+          ...c,
+          bureauId: b.id,
+          bureauName: b.name,
+          assignedOfficerId: off.id,
+          assignedOfficerName: off.name,
+          status: c.status === 'Open' ? ('Under Review' as ComplaintStatus) : c.status,
+          currentStageId: c.currentStageId === 1 || c.currentStageId === 2 ? 4 : c.currentStageId,
+          lastUpdatedDate: now,
+          assignmentHistory: newAssignmentHistory
+        };
+      })
+    );
+
+    addAuditLogEntry({
+      action: 'Bulk Case Allocation',
+      entityType: 'Assignment',
+      entityId: `BULK-${complaintIds.length}`,
+      details: `${complaintIds.length} complaints allocated to ${b.shortName} (${off.name}) by ${currentUser.name}`
+    });
+    return true;
+  };
+
+  const bulkUpdatePriority = (complaintIds: string[], newPriority: ComplaintPriority, reason: string) => {
+    const now = '2026-10-24';
+    setComplaints(prev =>
+      prev.map(c => {
+        if (!complaintIds.includes(c.id)) return c;
+        return {
+          ...c,
+          priority: newPriority,
+          lastUpdatedDate: now
+        };
+      })
+    );
+    addAuditLogEntry({
+      action: 'Bulk Priority Updated',
+      entityType: 'Status',
+      entityId: `BULK-${complaintIds.length}`,
+      details: `Priority updated to ${newPriority} for ${complaintIds.length} complaints. Justification: ${reason}`,
+      newValue: newPriority
+    });
+    return true;
+  };
+
+  // Secure Portal Login for Government Officials
   const login = async (
     email: string,
     password: string,
-    portal: 'admin' | 'bureau_officer'
+    portal: 'admin' | 'bureau_officer' = 'admin'
   ): Promise<{ success: boolean; error?: string }> => {
     // Simulated auth delay
     await new Promise(r => setTimeout(r, 450));
@@ -295,18 +488,10 @@ export const CaseTrackProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       };
     }
 
-    const isOfficer = user.role === 'bureau_officer' || user.role === 'officer';
-    if (portal === 'admin' && user.role !== 'admin') {
+    if (user.role === 'public') {
       return {
         success: false,
-        error: 'Access Denied: Your account does not have Administration credentials.'
-      };
-    }
-
-    if (portal === 'bureau_officer' && !isOfficer) {
-      return {
-        success: false,
-        error: 'Access Denied: Your account does not have Bureau Officer credentials.'
+        error: 'Access Restricted: Public complainant accounts cannot access the Government Officials Portal. Please use citizen complaint tracking.'
       };
     }
 
@@ -314,7 +499,7 @@ export const CaseTrackProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       userId: user.id,
       email: user.email,
       role: user.role,
-      portal,
+      portal: 'admin' as const,
       token: `cmis_jwt_${Date.now()}`
     };
 
@@ -323,11 +508,11 @@ export const CaseTrackProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     localStorage.setItem(`${STORAGE_KEY_PREFIX}auth_session`, JSON.stringify(sess));
 
     addAuditLogEntry({
-      action: 'Official Portal Authentication',
+      action: 'Government Officials Authentication',
       entityType: 'SystemSettings',
       entityId: user.id,
-      details: `User ${user.name} authenticated into ${portal.toUpperCase()} portal`,
-      newValue: portal
+      details: `User ${user.name} (${user.designation}) authenticated into Government Officials Portal`,
+      newValue: 'admin'
     });
 
     return { success: true };
@@ -1469,7 +1654,13 @@ export const CaseTrackProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         markAlertReviewed,
         updateSettings,
         resetDemoData,
-        hasPermission
+        hasPermission,
+        tasks,
+        addTask,
+        toggleTask,
+        deleteTask,
+        bulkAssignComplaints,
+        bulkUpdatePriority
       }}
     >
       {children}

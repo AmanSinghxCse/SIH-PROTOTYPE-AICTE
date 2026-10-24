@@ -242,16 +242,16 @@ export const HomePage: React.FC = () => {
         </div>
       </section>
 
-      {/* 3. Choose Your Portal Section (Exactly Three Portals) */}
+      {/* 3. Choose Your Portal Section */}
       <section className="space-y-4">
         <div className="text-center space-y-1">
           <h2 className="text-xl font-bold text-[#17324D]">Select Your Authorized Portal</h2>
           <p className="text-xs text-[#53677D]">
-            Dedicated interfaces for Citizens/Students, Central Administration, and Bureau Inquiry Officers.
+            Consolidated portals for Public Redressal Access and Government Officials Administrative Command.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
           {/* 1. Public Portal */}
           <div className="p-6 bg-white rounded-xl border-t-4 border-t-[#0B477F] border-x border-b border-[#D6E4F0] shadow-xs space-y-4 flex flex-col justify-between interactive-card">
             <div className="space-y-3">
@@ -260,7 +260,7 @@ export const HomePage: React.FC = () => {
               </div>
               <h3 className="text-base font-bold text-[#17324D]">Public Portal</h3>
               <p className="text-xs text-[#53677D] leading-relaxed">
-                For students, parents, faculty, and citizens to register grievances, track live status, inspect 10-stage milestones, and respond to inquiries.
+                For students, parents, faculty, and citizens to register grievances, track live status with token authentication, inspect 10-stage milestones, and respond to clarifications.
               </p>
             </div>
             <div className="space-y-2">
@@ -268,7 +268,7 @@ export const HomePage: React.FC = () => {
                 onClick={() => navigate('/portal/public')}
                 className="w-full py-2.5 px-4 rounded-lg bg-[#0B477F] text-white hover:bg-[#155A91] text-xs font-semibold shadow-xs transition-colors flex items-center justify-center gap-1.5"
               >
-                <span>Enter Public Dashboard</span>
+                <span>Enter Public Portal</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
               <button
@@ -280,42 +280,22 @@ export const HomePage: React.FC = () => {
             </div>
           </div>
 
-          {/* 2. Administration Portal */}
+          {/* 2. Government Officials Portal */}
           <div className="p-6 bg-white rounded-xl border-t-4 border-t-blue-700 border-x border-b border-[#D6E4F0] shadow-xs space-y-4 flex flex-col justify-between interactive-card">
             <div className="space-y-3">
               <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center text-blue-700">
                 <ShieldCheck className="w-6 h-6" />
               </div>
-              <h3 className="text-base font-bold text-[#17324D]">Administration Portal</h3>
+              <h3 className="text-base font-bold text-[#17324D]">Government Officials Portal</h3>
               <p className="text-xs text-[#53677D] leading-relaxed">
-                Central command for case allocations, cross-bureau transfers, priority & deadline governance, institution intelligence, closure sign-offs, and audit trails.
+                Integrated administrative command center for authorized AICTE administrators and bureau officers. Includes 20 KPI cards, bureau investigation desks, case allocation, and audit governance.
               </p>
             </div>
             <button
               onClick={() => navigate('/portal/admin')}
               className="w-full py-2.5 px-4 rounded-lg bg-blue-700 text-white hover:bg-blue-800 text-xs font-semibold shadow-xs transition-colors flex items-center justify-center gap-1.5"
             >
-              <span>Enter Administration Portal</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          {/* 3. Bureau Officer Portal */}
-          <div className="p-6 bg-white rounded-xl border-t-4 border-t-indigo-700 border-x border-b border-[#D6E4F0] shadow-xs space-y-4 flex flex-col justify-between interactive-card">
-            <div className="space-y-3">
-              <div className="w-12 h-12 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-700">
-                <Building2 className="w-6 h-6" />
-              </div>
-              <h3 className="text-base font-bold text-[#17324D]">Bureau Officer Portal</h3>
-              <p className="text-xs text-[#53677D] leading-relaxed">
-                Dedicated investigation workspace for authorized bureau officers to examine evidence, issue statutory explanation notices, record replies, and formulate resolutions.
-              </p>
-            </div>
-            <button
-              onClick={() => navigate('/portal/officer')}
-              className="w-full py-2.5 px-4 rounded-lg bg-indigo-700 text-white hover:bg-indigo-800 text-xs font-semibold shadow-xs transition-colors flex items-center justify-center gap-1.5"
-            >
-              <span>Enter Bureau Officer Portal</span>
+              <span>Enter Government Officials Portal</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>

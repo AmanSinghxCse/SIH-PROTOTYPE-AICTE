@@ -246,6 +246,24 @@ export interface NotificationItem {
   priority: 'low' | 'medium' | 'high' | 'urgent';
 }
 
+export interface TaskItem {
+  id: string;
+  complaintId?: string;
+  complaintTitle?: string;
+  institutionName?: string;
+  title: string;
+  description?: string;
+  assignedToId: string;
+  assignedToName: string;
+  priority: 'Critical' | 'High' | 'Medium' | 'Low';
+  dueDate: string;
+  completed: boolean;
+  completedAt?: string;
+  completedBy?: string;
+  createdAt: string;
+  category?: string;
+}
+
 // Circular Complaint Lifecycle Model
 export interface LifecycleStage {
   id: number;

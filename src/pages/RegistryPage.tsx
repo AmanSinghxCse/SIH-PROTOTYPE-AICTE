@@ -1,12 +1,14 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useCaseTrack } from '../context/CaseTrackContext';
-import { Complaint, ComplaintStatus } from '../types';
+import { Complaint, ComplaintStatus, ComplaintPriority } from '../types';
 import { StatusBadge, PriorityBadge } from '../components/common/Badge';
 import { formatDate, getCaseAgeInDays, isApproachingDeadline, isOverdue } from '../utils/dateUtils';
 import { UpdateStatusModal } from '../components/modals/UpdateStatusModal';
 import { AssignCaseModal } from '../components/modals/AssignCaseModal';
 import { AddNoteModal } from '../components/modals/AddNoteModal';
+import { BulkAssignModal } from '../components/modals/BulkAssignModal';
+import { BulkPriorityModal } from '../components/modals/BulkPriorityModal';
 import {
   Search,
   Filter,
@@ -25,7 +27,12 @@ import {
   ArrowLeft,
   Calendar,
   Layers,
-  Sparkles
+  Sparkles,
+  CheckSquare,
+  Square,
+  ShieldCheck,
+  Flag,
+  X
 } from 'lucide-react';
 
 export const RegistryPage: React.FC = () => {
@@ -34,12 +41,20 @@ export const RegistryPage: React.FC = () => {
   const {
     complaints,
     bureaus,
+    users,
     updateComplaintStatus,
     assignComplaint,
+    bulkAssignComplaints,
+    bulkUpdatePriority,
     addNote,
     hasPermission,
     settings
   } = useCaseTrack();
+
+  // Multi-selection state for bulk actions
+  const [selectedComplaintIds, setSelectedComplaintIds] = useState<string[]>([]);
+  const [bulkAssignOpen, setBulkAssignOpen] = useState(false);
+  const [bulkPriorityOpen, setBulkPriorityOpen] = useState(false);
 
   // Search and filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -180,7 +195,7 @@ export const RegistryPage: React.FC = () => {
         if (!matches) return false;
       }
 
-      // Special Filter from Dashboard Cards
+      // Special Filter from Dashboard Cards (Comprehensive 20 KPI coverage)
       if (specialFilter === 'unassigned') {
         if (c.bureauId && c.assignedOfficerId) return false;
       } else if (specialFilter === 'assigned') {
@@ -189,6 +204,8 @@ export const RegistryPage: React.FC = () => {
         if (c.verificationStatus === 'Verified') return false;
       } else if (specialFilter === 'institution_response') {
         if (c.status !== 'Awaiting Institution Response' && !c.institutionResponseRequested) return false;
+      } else if (specialFilter === 'awaiting_info') {
+        if (c.status !== 'Awaiting Information' && c.verificationStatus !== 'Needs Information') return false;
       } else if (specialFilter === 'action') {
         if (c.status !== 'Action & Investigation' && c.status !== 'Escalated') return false;
       } else if (specialFilter === 'resolution_recommended') {
@@ -197,10 +214,17 @@ export const RegistryPage: React.FC = () => {
         if (c.status !== 'Awaiting Closure Review' && c.status !== 'Resolved') return false;
       } else if (specialFilter === 'reopened') {
         if (!c.isReopened && c.status !== 'Reopened') return false;
+      } else if (specialFilter === 'escalated') {
+        if (c.status !== 'Escalated' && c.priority !== 'Critical') return false;
+      } else if (specialFilter === 'under_review') {
+        if (c.status !== 'Under Review' && c.status !== 'Action & Investigation') return false;
+      } else if (specialFilter === 'updated_today') {
+        if (c.lastUpdatedDate !== today && c.submissionDate !== today) return false;
+      } else if (specialFilter === 'stale') {
+        if (c.status === 'Closed' || c.status === 'Resolved') return false;
+        if (getCaseAgeInDays(c.lastUpdatedDate || c.submissionDate) < 14) return false;
       } else if (specialFilter === 'new_assigned') {
         if (!c.assignedOfficerId || c.status === 'Closed') return false;
-      } else if (specialFilter === 'under_review') {
-        if (c.status !== 'Under Review') return false;
       } else if (specialFilter === 'action_required') {
         if (c.status !== 'Action & Investigation' && c.status !== 'Awaiting Information') return false;
       } else if (specialFilter === 'near_deadline') {
@@ -316,6 +340,69 @@ export const RegistryPage: React.FC = () => {
     document.body.removeChild(link);
   };
 
+  const handleExportSelectedCSV = () => {
+    const targetCases = sorted.filter(c => selectedComplaintIds.includes(c.id));
+    if (targetCases.length === 0) return;
+    const headers = [
+      'Complaint Reference ID',
+      'Complaint Title',
+      'Institution Name',
+      'Institution Code',
+      'Complaint Category',
+      'Submission Date',
+      'Priority',
+      'Current Status',
+      'Assigned Bureau',
+      'Assigned Officer',
+      'Days Pending',
+      'Deadline',
+      'Last Updated',
+      'Next Required Action'
+    ];
+    const rows = targetCases.map(c => [
+      c.id,
+      `"${c.title.replace(/"/g, '""')}"`,
+      `"${c.institutionName.replace(/"/g, '""')}"`,
+      c.institutionCode,
+      `"${c.category}"`,
+      c.submissionDate,
+      c.priority,
+      c.status,
+      `"${c.bureauName}"`,
+      `"${c.assignedOfficerName}"`,
+      getCaseAgeInDays(c.submissionDate, c.resolvedDate),
+      c.deadlineDate,
+      c.lastUpdatedDate || c.submissionDate,
+      `"${getNextRequiredAction(c).label}"`
+    ]);
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `aicte_selected_complaints_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const isAllPageSelected = paginatedComplaints.length > 0 && paginatedComplaints.every(c => selectedComplaintIds.includes(c.id));
+
+  const toggleSelectAllPage = () => {
+    if (isAllPageSelected) {
+      const pageIds = new Set(paginatedComplaints.map(c => c.id));
+      setSelectedComplaintIds(prev => prev.filter(id => !pageIds.has(id)));
+    } else {
+      const pageIds = paginatedComplaints.map(c => c.id);
+      setSelectedComplaintIds(prev => Array.from(new Set([...prev, ...pageIds])));
+    }
+  };
+
+  const toggleSelectComplaint = (id: string) => {
+    setSelectedComplaintIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
   const handleResetFilters = () => {
     setSearchTerm('');
     setFilterBureau('ALL');
@@ -325,6 +412,7 @@ export const RegistryPage: React.FC = () => {
     setSpecialFilter('ALL');
     setOnlyOverdue(false);
     setOnlyApproaching(false);
+    setSelectedComplaintIds([]);
     setCurrentPage(1);
     navigate('/registry', { replace: true });
   };
@@ -333,16 +421,20 @@ export const RegistryPage: React.FC = () => {
   const activeBannerInfo = useMemo(() => {
     if (specialFilter !== 'ALL') {
       const labels: Record<string, string> = {
-        unassigned: 'Unassigned Complaints (Allocation Stage 3)',
+        unassigned: 'Awaiting Assignment (Bureau & Desk Officer Unallocated)',
         assigned: 'Assigned Complaints (Active with Desk Officer)',
         awaiting_verification: 'Awaiting Scrutiny & Document Verification (Stage 2)',
         institution_response: 'Awaiting Institution Explanation Notice (Stage 6)',
+        awaiting_info: 'Awaiting Additional Complainant Information (Stage 2/5)',
         action: 'Awaiting Administrative Action & Investigation (Stage 7)',
-        resolution_recommended: 'Resolution Recommended (Concluded Cases)',
+        resolution_recommended: 'Resolution Recommended (Concluded Bureau Review)',
         closure_review: 'Awaiting Closure Review & Sanction (Stage 9)',
         reopened: 'Reopened Complaints (High-Priority Re-investigation)',
+        escalated: 'Escalated Complaints (Urgent Council Directives)',
+        updated_today: 'Complaints Updated Today',
+        stale: 'Complaints with No Recent Activity in 14+ Days',
         new_assigned: 'Newly Assigned Officer Cases',
-        under_review: 'Cases Under Preliminary Review (Stage 5)',
+        under_review: 'Cases Under Active Preliminary Review (Stage 5)',
         action_required: 'Cases Requiring Formal Hearing / Evidence',
         near_deadline: `Cases Approaching SLA Deadline (Within ${settings.approachingDeadlineDays} Days)`,
         recent: 'Recently Updated Complaints (Last 7 Days)'
@@ -589,6 +681,22 @@ export const RegistryPage: React.FC = () => {
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-slate-700 font-bold uppercase tracking-wider text-[11px]">
+                {/* 0. Selection Master Checkbox */}
+                <th className="py-3 px-3 w-10 text-center">
+                  <button
+                    type="button"
+                    onClick={toggleSelectAllPage}
+                    className="p-1 hover:bg-slate-200 rounded text-slate-600 transition"
+                    title={isAllPageSelected ? 'Deselect all on this page' : 'Select all on this page'}
+                  >
+                    {isAllPageSelected ? (
+                      <CheckSquare className="w-4 h-4 text-[#0B477F]" />
+                    ) : (
+                      <Square className="w-4 h-4 text-slate-400" />
+                    )}
+                  </button>
+                </th>
+
                 {/* 1. Reference ID */}
                 <th
                   onClick={() => handleSort('id')}
@@ -707,7 +815,7 @@ export const RegistryPage: React.FC = () => {
             <tbody className="divide-y divide-slate-100">
               {paginatedComplaints.length === 0 ? (
                 <tr>
-                  <td colSpan={14} className="py-14 text-center text-slate-500">
+                  <td colSpan={15} className="py-14 text-center text-slate-500">
                     <FileText className="w-10 h-10 mx-auto text-slate-300 mb-2" />
                     <p className="font-bold text-sm text-[#17324D]">No complaints matching criteria</p>
                     <p className="text-xs text-slate-400 mt-1">Try resetting search filters or selecting all bureaus.</p>
@@ -720,13 +828,35 @@ export const RegistryPage: React.FC = () => {
                   const age = getCaseAgeInDays(c.submissionDate, c.resolvedDate);
                   const nextAction = getNextRequiredAction(c);
                   const lastUpdate = c.lastUpdatedDate || c.submissionDate;
+                  const isSelected = selectedComplaintIds.includes(c.id);
 
                   return (
                     <tr
                       key={c.id}
-                      className="hover:bg-blue-50/50 transition-colors group cursor-pointer"
+                      className={`hover:bg-blue-50/50 transition-colors group cursor-pointer ${isSelected ? 'bg-blue-50/70' : ''}`}
                       onClick={() => navigate(`/case/${c.id}`)}
                     >
+                      {/* 0. Row Selection Checkbox */}
+                      <td
+                        className="py-3.5 px-3 text-center"
+                        onClick={e => {
+                          e.stopPropagation();
+                          toggleSelectComplaint(c.id);
+                        }}
+                      >
+                        <button
+                          type="button"
+                          className="p-1 hover:bg-blue-100 rounded text-slate-600 transition"
+                          title="Select complaint for bulk operations"
+                        >
+                          {isSelected ? (
+                            <CheckSquare className="w-4 h-4 text-[#0B477F]" />
+                          ) : (
+                            <Square className="w-4 h-4 text-slate-300 group-hover:text-slate-400" />
+                          )}
+                        </button>
+                      </td>
+
                       {/* 1. Reference ID */}
                       <td className="py-3.5 px-3.5 font-mono font-bold text-[#0B477F] whitespace-nowrap">
                         <div className="flex items-center gap-1.5">
@@ -898,6 +1028,59 @@ export const RegistryPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Floating Bulk Actions Bar */}
+      {selectedComplaintIds.length > 0 && (
+        <div className="fixed bottom-6 inset-x-0 z-40 max-w-3xl mx-auto px-4 animate-fadeIn">
+          <div className="bg-[#17324D] text-white p-3.5 rounded-2xl shadow-2xl border border-blue-400/30 flex flex-wrap items-center justify-between gap-3 backdrop-blur-md">
+            <div className="flex items-center gap-3">
+              <span className="w-7 h-7 rounded-full bg-[#0B477F] text-amber-300 flex items-center justify-center text-xs font-black shadow-xs">
+                {selectedComplaintIds.length}
+              </span>
+              <span className="text-xs font-bold text-slate-200">
+                {selectedComplaintIds.length === 1 ? '1 complaint selected' : `${selectedComplaintIds.length} complaints selected`}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setBulkAssignOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0B477F] hover:bg-blue-600 text-white rounded-lg text-xs font-bold transition shadow-xs"
+                title="Bulk reassign selected complaints to an AICTE bureau and officer"
+              >
+                <UserCheck className="w-3.5 h-3.5 text-amber-300" />
+                <span>Bulk Assign</span>
+              </button>
+
+              <button
+                onClick={() => setBulkPriorityOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-bold transition shadow-xs"
+                title="Bulk escalate or adjust urgency level with official reason"
+              >
+                <Flag className="w-3.5 h-3.5" />
+                <span>Bulk Priority</span>
+              </button>
+
+              <button
+                onClick={handleExportSelectedCSV}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs font-semibold transition"
+                title="Download CSV for selected complaints"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Export ({selectedComplaintIds.length})</span>
+              </button>
+
+              <button
+                onClick={() => setSelectedComplaintIds([])}
+                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition"
+                title="Deselect all"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Action Modals */}
       {statusModalCase && (
         <UpdateStatusModal
@@ -924,6 +1107,34 @@ export const RegistryPage: React.FC = () => {
           onClose={() => setNoteModalCase(null)}
           complaint={noteModalCase}
           onAddNote={addNote}
+        />
+      )}
+
+      {bulkAssignOpen && (
+        <BulkAssignModal
+          isOpen={bulkAssignOpen}
+          onClose={() => setBulkAssignOpen(false)}
+          selectedComplaintIds={selectedComplaintIds}
+          bureaus={bureaus}
+          users={users}
+          onBulkAssign={async (ids, bureauId, officerId, notes) => {
+            await bulkAssignComplaints(ids, bureauId, officerId, notes);
+            setSelectedComplaintIds([]);
+            setBulkAssignOpen(false);
+          }}
+        />
+      )}
+
+      {bulkPriorityOpen && (
+        <BulkPriorityModal
+          isOpen={bulkPriorityOpen}
+          onClose={() => setBulkPriorityOpen(false)}
+          selectedComplaintIds={selectedComplaintIds}
+          onBulkUpdatePriority={async (ids: string[], priority: ComplaintPriority, reason: string) => {
+            await bulkUpdatePriority(ids, priority, reason);
+            setSelectedComplaintIds([]);
+            setBulkPriorityOpen(false);
+          }}
         />
       )}
     </div>

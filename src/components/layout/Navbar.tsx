@@ -102,7 +102,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenGuidedTour }) => {
         .slice(0, 6)
     : [];
 
-  // Dynamic navigation items based on active role & auth strictly adhering to Section 7
+  // Dynamic navigation items based on active role & auth
   const getNavItemsForRole = () => {
     if (!isAuthenticated || currentUser.role === 'public') {
       return [
@@ -113,29 +113,13 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenGuidedTour }) => {
       ];
     }
 
-    if (currentUser.role === 'bureau_officer' || currentUser.role === 'officer') {
-      return [
-        { to: '/portal/officer', label: 'Dashboard', icon: LayoutDashboard },
-        {
-          to: '/portal/officer',
-          label: 'My Assigned Cases',
-          icon: FileText,
-          badge: complaints.filter(c => c.bureauId === (currentUser.bureauId || 'BUR-GRV')).length
-        },
-        { to: '/portal/officer', label: 'Case Review', icon: Clock },
-        { to: '/institutions', label: 'Institution History', icon: Building2 },
-        { to: '/portal/officer', label: 'Action Updates', icon: UserCheck }
-      ];
-    }
-
-    // Default: Administration Portal
+    // Consolidated Government Officials Portal Navigation
     return [
-      { to: '/portal/admin', label: 'Dashboard', icon: LayoutDashboard },
+      { to: '/portal/admin', label: 'Command Center', icon: LayoutDashboard },
       { to: '/registry', label: 'Complaint Registry', icon: FileText, badge: complaints.length },
-      { to: '/portal/admin', label: 'Assign Cases', icon: UserCheck },
       { to: '/institutions', label: 'Institutions', icon: Building2 },
-      { to: '/analytics', label: 'Reports', icon: BarChart3 },
-      { to: '/portal/admin', label: 'Staff Management', icon: Shield },
+      { to: '/analytics', label: 'Reports & Analytics', icon: BarChart3 },
+      { to: '/alerts', label: 'SLA Alerts', icon: AlertTriangle, badge: totalAlertCount > 0 ? totalAlertCount : undefined },
       { to: '/audit', label: 'Audit History', icon: FileCheck2 }
     ];
   };
@@ -405,7 +389,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenGuidedTour }) => {
                   <div className="hidden sm:block">
                     <div className="text-xs font-bold text-[#17324D] line-clamp-1 leading-tight">{currentUser.name}</div>
                     <div className="text-[10px] text-[#155A91] font-semibold uppercase tracking-wider">
-                      {currentUser.role === 'admin' ? 'ADMINISTRATION' : 'BUREAU OFFICER'}
+                      {currentUser.role === 'admin' ? 'ADMINISTRATOR' : 'BUREAU OFFICER'}
                     </div>
                   </div>
                   <ChevronDown className="w-3.5 h-3.5 text-[#53677D]" />
@@ -417,20 +401,20 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenGuidedTour }) => {
                       <div className="text-xs font-bold text-[#17324D]">{currentUser.name}</div>
                       <div className="text-[11px] text-[#53677D] truncate">{currentUser.email}</div>
                       <div className="text-[10px] font-semibold text-[#0B477F] mt-1 uppercase">
-                        {currentUser.role === 'admin' ? 'Administration Portal' : 'Bureau Officer Portal'}
+                        Government Officials Portal
                       </div>
                     </div>
 
                     <div className="p-2 space-y-1">
                       <button
                         onClick={() => {
-                          navigate(currentUser.role === 'admin' ? '/portal/admin' : '/portal/officer');
+                          navigate('/portal/admin');
                           setIsRoleDropdownOpen(false);
                         }}
                         className="w-full text-left p-2 rounded-lg hover:bg-[#F1F7FC] text-xs font-medium text-[#17324D] flex items-center gap-2"
                       >
                         <LayoutDashboard className="w-4 h-4 text-[#0B477F]" />
-                        <span>My Dashboard</span>
+                        <span>Command Center</span>
                       </button>
 
                       <button

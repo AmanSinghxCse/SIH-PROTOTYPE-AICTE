@@ -2,7 +2,9 @@ import React, { useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCaseTrack } from '../../context/CaseTrackContext';
 import { INITIAL_USERS } from '../../data/seedData';
-import { getCaseAgeInDays } from '../../utils/dateUtils';
+import { getCaseAgeInDays, isApproachingDeadline, isOverdue, formatDate } from '../../utils/dateUtils';
+import { Complaint, ComplaintPriority, ComplaintStatus, TaskItem } from '../../types';
+import { ComplaintLifecycleTracker } from '../../components/workflow/ComplaintLifecycleTracker';
 import {
   ShieldCheck,
   Inbox,
@@ -27,7 +29,22 @@ import {
   Lightbulb,
   Building,
   FileText,
-  UserPlus
+  UserPlus,
+  ListTodo,
+  CheckSquare,
+  Send,
+  MessageSquarePlus,
+  Sparkles,
+  ExternalLink,
+  Lock,
+  MessageCircle,
+  Flame,
+  Filter,
+  PlusCircle,
+  X,
+  Layers,
+  Calendar,
+  Briefcase
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -55,15 +72,38 @@ export const AdminDashboardPage: React.FC = () => {
     approveCaseClosure,
     reassignComplaint,
     reopenComplaint,
+    requestInstitutionResponse,
+    recordInstitutionResponse,
+    requestComplainantInfo,
+    recommendResolution,
+    addNote,
+    notes,
+    relatedSuggestions,
     users,
     addUser,
     auditLogs,
     settings,
     updateSettings,
-    updateComplaintDeadline
+    updateComplaintDeadline,
+    tasks,
+    addTask,
+    toggleTask,
+    deleteTask,
+    hasPermission
   } = useCaseTrack();
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'verification' | 'supervision' | 'analytics' | 'users' | 'sla'>('overview');
+  // Active workspace tab
+  const [activeTab, setActiveTab] = useState<
+    'overview' | 'bureau_desk' | 'verification' | 'supervision' | 'analytics' | 'tasks' | 'users' | 'sla'
+  >('overview');
+
+  // Multi-criteria Dashboard Filters (Section 6)
+  const [filterDateRange, setFilterDateRange] = useState<'all' | '7d' | '30d' | '90d'>('all');
+  const [filterCategory, setFilterCategory] = useState<string>('all');
+  const [filterBureau, setFilterBureau] = useState<string>('all');
+  const [filterPriority, setFilterPriority] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterSearch, setFilterSearch] = useState<string>('');
 
   // SLA & Priority Governance State
   const [slaNormal, setSlaNormal] = useState(settings?.defaultDeadlineNormal || 30);
@@ -105,38 +145,99 @@ export const AdminDashboardPage: React.FC = () => {
   const [supervisoryNotes, setSupervisoryNotes] = useState('');
   const [supervisorySuccessMsg, setSupervisorySuccessMsg] = useState<string | null>(null);
 
+  // Bureau Desk Investigation Drawer State (Transferred from Bureau Officer Portal)
+  const [selectedDeskCaseId, setSelectedDeskCaseId] = useState<string | null>(null);
+  const [deskDrawerTab, setDeskDrawerTab] = useState<'actions' | 'lifecycle' | 'notes' | 'intel'>('actions');
+  const [institutionQuery, setInstitutionQuery] = useState('');
+  const [institutionReply, setInstitutionReply] = useState('');
+  const [citizenQuery, setCitizenQuery] = useState('');
+  const [resolutionProposal, setResolutionProposal] = useState('');
+  const [newNoteContent, setNewNoteContent] = useState('');
+  const [deskSuccessMsg, setDeskSuccessMsg] = useState<string | null>(null);
+
+  // Task Management State
+  const [taskFilter, setTaskFilter] = useState<'ALL' | 'CRITICAL' | 'HIGH' | 'PENDING'>('ALL');
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskComplaintId, setNewTaskComplaintId] = useState(complaints[0]?.id || '');
+  const [newTaskDueDate, setNewTaskDueDate] = useState('2026-10-30');
+  const [newTaskPriority, setNewTaskPriority] = useState<'Critical' | 'High' | 'Medium' | 'Low'>('High');
+  const [newTaskModalOpen, setNewTaskModalOpen] = useState(false);
+
   // Analytics CSV Export State
   const [downloadSuccess, setDownloadSuccess] = useState(false);
 
   const today = '2026-10-23';
 
-  // 1. Summary Cards (Total, Unassigned, Open, Overdue, Resolved)
+  // Filter complaints based on dashboard multi-criteria filters
+  const filteredDashboardComplaints = useMemo(() => {
+    return complaints.filter(c => {
+      if (filterCategory !== 'all' && c.category !== filterCategory) return false;
+      if (filterBureau !== 'all' && c.bureauId !== filterBureau) return false;
+      if (filterPriority !== 'all') {
+        if (filterPriority === 'High' && c.priority !== 'High' && c.priority !== 'Critical' && c.priority !== 'Urgent') return false;
+        else if (filterPriority !== 'High' && c.priority !== filterPriority) return false;
+      }
+      if (filterStatus !== 'all' && c.status !== filterStatus) return false;
+      if (filterDateRange !== 'all') {
+        const age = getCaseAgeInDays(c.submissionDate);
+        if (filterDateRange === '7d' && age > 7) return false;
+        if (filterDateRange === '30d' && age > 30) return false;
+        if (filterDateRange === '90d' && age > 90) return false;
+      }
+      if (filterSearch.trim()) {
+        const q = filterSearch.toLowerCase();
+        const m = c.id.toLowerCase().includes(q) || c.institutionName.toLowerCase().includes(q) || c.title.toLowerCase().includes(q);
+        if (!m) return false;
+      }
+      return true;
+    });
+  }, [complaints, filterCategory, filterBureau, filterPriority, filterStatus, filterDateRange, filterSearch]);
+
+  // 20 Statutory Interactive KPI Counts (Section 5)
   const stats = useMemo(() => {
-    const total = complaints.length;
-    const newlyRegistered = complaints.filter(c => c.status === 'Open').length;
-    const awaitingVerification = complaints.filter(
+    const list = filteredDashboardComplaints;
+    const total = list.length;
+    const newlyRegistered = list.filter(c => c.status === 'Open').length;
+    const awaitingVerification = list.filter(
       c => !c.verificationStatus || c.verificationStatus === 'Pending' || c.verificationStatus === 'Needs Information'
     ).length;
-    const awaitingAssignment = complaints.filter(c => !c.bureauId || !c.assignedOfficerId).length;
-    const assigned = complaints.filter(c => Boolean(c.bureauId && c.assignedOfficerId)).length;
-    const underReview = complaints.filter(c => c.status === 'Under Review').length;
-    const awaitingInstitutionResponse = complaints.filter(
+    const awaitingAssignment = list.filter(c => !c.bureauId || !c.assignedOfficerId).length;
+    const assigned = list.filter(c => Boolean(c.bureauId && c.assignedOfficerId)).length;
+    const underInvestigation = list.filter(c => c.status === 'Under Review' || c.status === 'Action & Investigation').length;
+    const awaitingInstitutionResponse = list.filter(
       c => c.status === 'Awaiting Institution Response' || c.institutionResponseRequested
     ).length;
-    const awaitingAction = complaints.filter(c => c.status === 'Action & Investigation' || c.status === 'Escalated').length;
-    const highPriority = complaints.filter(
+    const awaitingInfo = list.filter(
+      c => c.status === 'Awaiting Information' || c.verificationStatus === 'Needs Information'
+    ).length;
+    const awaitingAction = list.filter(c => c.status === 'Action & Investigation' || c.status === 'Escalated').length;
+    const highPriority = list.filter(
       c => (c.priority === 'High' || c.priority === 'Critical' || c.priority === 'Urgent') && c.status !== 'Closed'
     ).length;
-    const overdue = complaints.filter(c => {
+    const overdue = list.filter(c => {
       if (c.status === 'Resolved' || c.status === 'Closed') return false;
       return c.deadlineDate && c.deadlineDate < today;
     }).length;
-    const resolutionRecommended = complaints.filter(c => c.status === 'Resolution Recommended').length;
-    const awaitingClosureReview = complaints.filter(
+    const nearDeadline = list.filter(c => {
+      if (c.status === 'Resolved' || c.status === 'Closed') return false;
+      return isApproachingDeadline(c.deadlineDate, c.status, settings.approachingDeadlineDays);
+    }).length;
+    const resolutionRecommended = list.filter(c => c.status === 'Resolution Recommended').length;
+    const awaitingClosureReview = list.filter(
       c => c.status === 'Awaiting Closure Review' || (c.status === 'Resolved' && !c.closureApprovedBy)
     ).length;
-    const closed = complaints.filter(c => c.status === 'Closed').length;
-    const reopened = complaints.filter(c => c.isReopened || c.status === 'Reopened').length;
+    const resolved = list.filter(c => c.status === 'Resolved').length;
+    const closed = list.filter(c => c.status === 'Closed').length;
+    const reopened = list.filter(c => c.isReopened || c.status === 'Reopened').length;
+    const escalated = list.filter(c => c.status === 'Escalated').length;
+    const updatedToday = list.filter(
+      c => (c.lastUpdatedDate && c.lastUpdatedDate === today) || (c.submissionDate && c.submissionDate === today)
+    ).length;
+    const stale = list.filter(c => {
+      if (c.status === 'Closed' || c.status === 'Resolved') return false;
+      const age = getCaseAgeInDays(c.lastUpdatedDate || c.submissionDate);
+      return age >= 14;
+    }).length;
 
     return {
       total,
@@ -144,17 +245,23 @@ export const AdminDashboardPage: React.FC = () => {
       awaitingVerification,
       awaitingAssignment,
       assigned,
-      underReview,
+      underInvestigation,
       awaitingInstitutionResponse,
+      awaitingInfo,
       awaitingAction,
       highPriority,
       overdue,
+      nearDeadline,
       resolutionRecommended,
       awaitingClosureReview,
+      resolved,
       closed,
-      reopened
+      reopened,
+      escalated,
+      updatedToday,
+      stale
     };
-  }, [complaints, today]);
+  }, [filteredDashboardComplaints, today, settings.approachingDeadlineDays]);
 
   // Bureau workload breakdown
   const bureauWorkload = useMemo(() => {
@@ -167,42 +274,44 @@ export const AdminDashboardPage: React.FC = () => {
         return c.deadlineDate && c.deadlineDate < today;
       }).length;
       const resolved = bComplaints.filter(c => c.status === 'Resolved' || c.status === 'Closed').length;
-
+      const awaitingNotice = bComplaints.filter(c => c.status === 'Awaiting Institution Response' || c.institutionResponseRequested).length;
       return {
-        ...b,
+        id: b.id,
+        code: b.code,
+        name: b.name,
+        shortName: b.shortName,
+        officerInCharge: b.officerInCharge,
         total,
         active,
         overdue,
-        resolved
+        resolved,
+        awaitingNotice
       };
     });
   }, [bureaus, complaints, today]);
 
-  // Case Ageing metrics
+  // Ageing Buckets
   const ageingBuckets = useMemo(() => {
-    const todayMs = new Date('2026-10-23T00:00:00Z').getTime();
-    let less7 = 0;
-    let b8to15 = 0;
-    let b16to30 = 0;
-    let over30 = 0;
-
-    complaints.forEach(c => {
-      if (c.status === 'Resolved' || c.status === 'Closed') return;
-      const subTime = new Date(`${c.submissionDate}T00:00:00Z`).getTime();
-      const ageDays = Math.max(0, Math.floor((todayMs - subTime) / (1000 * 60 * 60 * 24)));
-
-      if (ageDays <= 7) less7++;
-      else if (ageDays <= 15) b8to15++;
-      else if (ageDays <= 30) b16to30++;
-      else over30++;
-    });
-
-    return { less7, b8to15, b16to30, over30 };
+    const unclosed = complaints.filter(c => c.status !== 'Resolved' && c.status !== 'Closed');
+    return {
+      less7: unclosed.filter(c => getCaseAgeInDays(c.submissionDate) <= 7).length,
+      b8to15: unclosed.filter(c => {
+        const a = getCaseAgeInDays(c.submissionDate);
+        return a >= 8 && a <= 15;
+      }).length,
+      b16to30: unclosed.filter(c => {
+        const a = getCaseAgeInDays(c.submissionDate);
+        return a >= 16 && a <= 30;
+      }).length,
+      over30: unclosed.filter(c => getCaseAgeInDays(c.submissionDate) > 30).length
+    };
   }, [complaints]);
 
-  // 2. Verification Queue
+  // Verification Desk Queue
   const verificationQueue = useMemo(() => {
-    return complaints.filter(c => !c.verificationStatus || c.verificationStatus === 'Pending' || c.verificationStatus === 'Needs Information');
+    return complaints.filter(
+      c => !c.verificationStatus || c.verificationStatus === 'Pending' || c.verificationStatus === 'Needs Information'
+    );
   }, [complaints]);
 
   const activeVerifyCase = useMemo(() => {
@@ -210,7 +319,7 @@ export const AdminDashboardPage: React.FC = () => {
     return complaints.find(c => c.id === selectedVerifyCaseId) || verificationQueue[0] || null;
   }, [selectedVerifyCaseId, verificationQueue, complaints]);
 
-  const matchedInstitutionForVerify = useMemo(() => {
+  const verifiedInstitution = useMemo(() => {
     if (!activeVerifyCase) return null;
     return institutions.find(
       inst =>
@@ -219,9 +328,9 @@ export const AdminDashboardPage: React.FC = () => {
     );
   }, [activeVerifyCase, institutions]);
 
-  // 3. Closure Review Queue
+  // Closure Review Queue
   const closureQueue = useMemo(() => {
-    return complaints.filter(c => c.status === 'Resolved' || c.status === 'Escalated');
+    return complaints.filter(c => c.status === 'Resolved' || c.status === 'Escalated' || c.status === 'Resolution Recommended' || c.status === 'Awaiting Closure Review');
   }, [complaints]);
 
   const activeSupervisoryCase = useMemo(() => {
@@ -229,24 +338,49 @@ export const AdminDashboardPage: React.FC = () => {
     return complaints.find(c => c.id === selectedSupervisoryCaseId) || closureQueue[0] || null;
   }, [selectedSupervisoryCaseId, closureQueue, complaints]);
 
-  // 4. Analytics Data
-  const resolvedCases = useMemo(() => {
-    return complaints.filter(c => (c.status === 'Resolved' || c.status === 'Closed') && c.resolvedDate);
-  }, [complaints]);
+  // Bureau Desk Cases Scoped by Officer or Active Bureau
+  const bureauDeskCases = useMemo(() => {
+    if (currentUser.role === 'bureau_officer' && currentUser.bureauId) {
+      return complaints.filter(c => c.bureauId === currentUser.bureauId || c.assignedOfficerId === currentUser.id);
+    }
+    return complaints.filter(c => c.assignedOfficerId);
+  }, [complaints, currentUser]);
 
-  const avgResolutionDays = useMemo(() => {
-    if (resolvedCases.length === 0) return 0;
-    const totalDays = resolvedCases.reduce((acc, c) => acc + getCaseAgeInDays(c.submissionDate, c.resolvedDate), 0);
-    return Math.round(totalDays / resolvedCases.length);
-  }, [resolvedCases]);
+  const selectedDeskCase = useMemo(() => {
+    if (!selectedDeskCaseId) return null;
+    return complaints.find(c => c.id === selectedDeskCaseId) || null;
+  }, [complaints, selectedDeskCaseId]);
 
+  const selectedDeskNotes = useMemo(() => {
+    if (!selectedDeskCaseId) return [];
+    return notes[selectedDeskCaseId] || [];
+  }, [notes, selectedDeskCaseId]);
+
+  const selectedDeskIntel = useMemo(() => {
+    if (!selectedDeskCaseId) return [];
+    return relatedSuggestions.filter(s => s.complaintId === selectedDeskCaseId || s.relatedComplaintId === selectedDeskCaseId);
+  }, [relatedSuggestions, selectedDeskCaseId]);
+
+  // Filtered Tasks
+  const filteredTasks = useMemo(() => {
+    return tasks.filter(t => {
+      if (taskFilter === 'PENDING' && t.completed) return false;
+      if (taskFilter === 'CRITICAL' && t.priority !== 'Critical') return false;
+      if (taskFilter === 'HIGH' && t.priority !== 'High') return false;
+      return true;
+    });
+  }, [tasks, taskFilter]);
+
+  // Analytics Chart Data
   const bureauChartData = useMemo(() => {
     return bureaus.map(b => {
       const bCases = complaints.filter(c => c.bureauId === b.id);
       return {
+        id: b.id,
         name: b.shortName || b.name,
         Active: bCases.filter(c => c.status !== 'Resolved' && c.status !== 'Closed').length,
-        Resolved: bCases.filter(c => c.status === 'Resolved' || c.status === 'Closed').length
+        Resolved: bCases.filter(c => c.status === 'Resolved' || c.status === 'Closed').length,
+        Overdue: bCases.filter(c => isOverdue(c.deadlineDate, c.status)).length
       };
     });
   }, [bureaus, complaints]);
@@ -275,11 +409,20 @@ export const AdminDashboardPage: React.FC = () => {
     });
 
     return Object.values(map)
-      .filter(i => i.count >= 3)
+      .filter(i => i.count >= 2)
       .sort((a, b) => b.count - a.count);
   }, [complaints]);
 
-  // Handlers
+  // Action Handlers
+  const handleResetDashboardFilters = () => {
+    setFilterDateRange('all');
+    setFilterCategory('all');
+    setFilterBureau('all');
+    setFilterPriority('all');
+    setFilterStatus('all');
+    setFilterSearch('');
+  };
+
   const handleCreateUser = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUserName.trim() || !newUserEmail.trim()) return;
@@ -351,6 +494,94 @@ export const AdminDashboardPage: React.FC = () => {
     setTimeout(() => setSupervisorySuccessMsg(null), 2500);
   };
 
+  const handleDeskDemandNotice = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedDeskCase || !institutionQuery.trim()) return;
+    requestInstitutionResponse(selectedDeskCase.id, institutionQuery.trim());
+    setDeskSuccessMsg(`Statutory explanation demand issued to ${selectedDeskCase.institutionName}. Status set to Awaiting Institution Response.`);
+    setInstitutionQuery('');
+    setTimeout(() => setDeskSuccessMsg(null), 3000);
+  };
+
+  const handleDeskRecordRejoinder = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedDeskCase || !institutionReply.trim()) return;
+    recordInstitutionResponse(selectedDeskCase.id, institutionReply.trim());
+    setDeskSuccessMsg(`Institution rejoinder registered on record for ${selectedDeskCase.id}. Moved to Action & Investigation.`);
+    setInstitutionReply('');
+    setTimeout(() => setDeskSuccessMsg(null), 3000);
+  };
+
+  const handleDeskCitizenQuery = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedDeskCase || !citizenQuery.trim()) return;
+    requestComplainantInfo(selectedDeskCase.id, citizenQuery.trim());
+    setDeskSuccessMsg(`Clarification request dispatched to complainant for ${selectedDeskCase.id}.`);
+    setCitizenQuery('');
+    setTimeout(() => setDeskSuccessMsg(null), 3000);
+  };
+
+  const handleDeskRecommendResolution = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedDeskCase || !resolutionProposal.trim()) return;
+    recommendResolution(selectedDeskCase.id, resolutionProposal.trim());
+    setDeskSuccessMsg(`Resolution terms formulated. Case ${selectedDeskCase.id} forwarded for administrative closure review.`);
+    setResolutionProposal('');
+    setTimeout(() => setDeskSuccessMsg(null), 3000);
+  };
+
+  const handleDeskAddNote = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedDeskCase || !newNoteContent.trim()) return;
+    addNote(selectedDeskCase.id, newNoteContent.trim(), undefined, true);
+    setDeskSuccessMsg(`Confidential internal note added to ${selectedDeskCase.id}.`);
+    setNewNoteContent('');
+    setTimeout(() => setDeskSuccessMsg(null), 2500);
+  };
+
+  const handleCreateTask = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTaskTitle.trim()) return;
+
+    const matchedC = complaints.find(c => c.id === newTaskComplaintId);
+    addTask({
+      title: newTaskTitle.trim(),
+      complaintId: newTaskComplaintId,
+      complaintTitle: matchedC?.title,
+      institutionName: matchedC?.institutionName,
+      dueDate: newTaskDueDate,
+      priority: newTaskPriority,
+      assignedToId: currentUser.id,
+      assignedToName: currentUser.name,
+      category: matchedC?.category
+    });
+
+    setNewTaskTitle('');
+    setNewTaskModalOpen(false);
+  };
+
+  const handleSaveSLA = (e: React.FormEvent) => {
+    e.preventDefault();
+    updateSettings({
+      defaultDeadlineNormal: slaNormal,
+      defaultDeadlineUrgent: slaUrgent,
+      approachingDeadlineDays: approachingDays,
+      overdueEscalationDays: escalationDays,
+      similarityThreshold: similarityThresh
+    });
+    setSlaSavedMsg(true);
+    setTimeout(() => setSlaSavedMsg(false), 2500);
+  };
+
+  const handleExtendDeadline = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!dlReason.trim()) return;
+    updateComplaintDeadline(dlCaseId, newDlDate, dlReason.trim());
+    setDlSavedMsg(true);
+    setDlReason('');
+    setTimeout(() => setDlSavedMsg(false), 2500);
+  };
+
   const handleExportCSV = () => {
     const headers = ['Case ID', 'Institution Name', 'Institution Code', 'Bureau', 'Category', 'Status', 'Filing Date', 'Resolution Date'];
     const rows = complaints.map(c => [
@@ -364,11 +595,11 @@ export const AdminDashboardPage: React.FC = () => {
       c.resolvedDate || 'Pending'
     ]);
 
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `AICTE_Administration_Report_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute('download', `aicte_government_officials_report_${today}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -378,156 +609,293 @@ export const AdminDashboardPage: React.FC = () => {
   };
 
   return (
-    <div className="py-6 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto space-y-8">
-      {/* Admin Header */}
+    <div className="py-6 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto space-y-6">
+      {/* Government Officials Command Center Header */}
       <div className="bg-white rounded-2xl border border-[#D6E4F0] p-6 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 text-[#0B477F] text-xs font-bold border border-blue-200 mb-2">
             <ShieldCheck className="w-3.5 h-3.5" />
-            <span>Administration Portal • Central Control & Governance</span>
+            <span>Government Officials Portal • Central Administration & Integrated Bureau Operations</span>
           </div>
           <h1 className="text-2xl font-black text-[#17324D]">
-            AICTE CaseTrack Administration Dashboard
+            AICTE Government Officials Command Center
           </h1>
           <p className="text-xs text-[#53677D] mt-1">
-            Logged in as: <strong className="text-[#17324D]">{currentUser.name}</strong> ({currentUser.designation})
+            Logged in as: <strong className="text-[#17324D]">{currentUser.name}</strong> ({currentUser.designation}) &bull; Access Level: <strong className="text-[#0B477F]">{currentUser.role === 'admin' ? 'Central Nodal Administrator' : 'Bureau Desk Officer'}</strong> &bull; Cell: <span className="font-semibold text-slate-700">{currentUser.bureauName || 'Grievance Redressal Cell'}</span>
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
+          {hasPermission('assign_case') && (
+            <button
+              onClick={() => {
+                setSelectedComplaintId(complaints[0]?.id || '');
+                setAllocationModalOpen(true);
+              }}
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#0B477F] text-white text-xs font-bold rounded-lg hover:bg-[#155A91] transition-all shadow-sm"
+            >
+              <UserCheck className="w-4 h-4" />
+              <span>Assign Case</span>
+            </button>
+          )}
+
           <button
-            onClick={() => {
-              setSelectedComplaintId(complaints[0]?.id || '');
-              setAllocationModalOpen(true);
-            }}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#0B477F] text-white text-xs font-bold rounded-lg hover:bg-[#155A91] transition-all shadow-sm"
+            onClick={() => setNewTaskModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2.5 bg-amber-50 border border-amber-300 text-amber-900 text-xs font-bold rounded-lg hover:bg-amber-100 transition shadow-sm"
           >
-            <UserCheck className="w-4 h-4" />
-            <span>Assign Case</span>
+            <ListTodo className="w-4 h-4 text-amber-700" />
+            <span>Create Task</span>
           </button>
+
           <Link
-            to="/audit"
+            to="/registry"
             className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-white border border-[#D6E4F0] text-[#17324D] text-xs font-semibold rounded-lg hover:bg-slate-50 transition-all shadow-sm"
           >
-            <History className="w-4 h-4 text-[#0B477F]" />
-            <span>Audit History</span>
+            <Layers className="w-4 h-4 text-[#0B477F]" />
+            <span>Registry</span>
           </Link>
         </div>
       </div>
 
-      {/* 13 Clickable KPI Cards Matching Section 2.1 */}
-      {complaints.length === 0 ? (
-        <div className="p-8 text-center bg-white rounded-xl border border-[#D6E4F0]">
-          <Inbox className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-          <h3 className="text-sm font-bold text-[#17324D]">No Complaint Records in Registry</h3>
-          <p className="text-xs text-[#53677D] mt-1">Submit a complaint via the Public Portal or reset sample data.</p>
+      {/* Advanced Multi-criteria Dashboard Filters Bar (Section 6) */}
+      <div className="bg-white rounded-xl border border-[#D6E4F0] p-4 shadow-xs space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-xs font-bold text-[#17324D]">
+            <Filter className="w-4 h-4 text-[#0B477F]" />
+            <span>Advanced Dashboard Criteria Filters</span>
+          </div>
+          {(filterCategory !== 'all' || filterBureau !== 'all' || filterPriority !== 'all' || filterStatus !== 'all' || filterDateRange !== 'all' || filterSearch) && (
+            <button
+              onClick={handleResetDashboardFilters}
+              className="text-xs font-bold text-rose-600 hover:text-rose-800 flex items-center gap-1"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>Reset Dashboard Filters</span>
+            </button>
+          )}
         </div>
-      ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3.5">
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-2.5 text-xs">
+          {/* Quick Search */}
+          <div className="relative md:col-span-2">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Filter by ID, college name, or title..."
+              value={filterSearch}
+              onChange={e => setFilterSearch(e.target.value)}
+              className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-[#D6E4F0] rounded-lg focus:outline-none focus:bg-white focus:ring-1 focus:ring-[#0B477F]"
+            />
+          </div>
+
+          {/* Date Range */}
+          <div>
+            <select
+              value={filterDateRange}
+              onChange={e => setFilterDateRange(e.target.value as any)}
+              className="w-full p-1.5 bg-slate-50 border border-[#D6E4F0] rounded-lg text-slate-700 focus:outline-none focus:bg-white"
+            >
+              <option value="all">All Filing Dates</option>
+              <option value="7d">Last 7 Days</option>
+              <option value="30d">Last 30 Days</option>
+              <option value="90d">Last 90 Days</option>
+            </select>
+          </div>
+
+          {/* Category */}
+          <div>
+            <select
+              value={filterCategory}
+              onChange={e => setFilterCategory(e.target.value)}
+              className="w-full p-1.5 bg-slate-50 border border-[#D6E4F0] rounded-lg text-slate-700 focus:outline-none focus:bg-white"
+            >
+              <option value="all">All Categories</option>
+              <option value="Infrastructure & Labs">Infrastructure & Labs</option>
+              <option value="Academic Administration & Faculty">Academic Administration</option>
+              <option value="Fee Irregularity & Caution Refund">Fee Irregularity</option>
+              <option value="Examination Malpractice & Results">Examinations</option>
+              <option value="Harassment & Anti-Ragging">Harassment / Anti-Ragging</option>
+              <option value="Regulatory Compliance & Fraud">Regulatory & Compliance</option>
+            </select>
+          </div>
+
+          {/* Bureau */}
+          <div>
+            <select
+              value={filterBureau}
+              onChange={e => setFilterBureau(e.target.value)}
+              className="w-full p-1.5 bg-slate-50 border border-[#D6E4F0] rounded-lg text-slate-700 focus:outline-none focus:bg-white"
+            >
+              <option value="all">All Bureaus</option>
+              {bureaus.map(b => (
+                <option key={b.id} value={b.id}>{b.shortName}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Priority */}
+          <div>
+            <select
+              value={filterPriority}
+              onChange={e => setFilterPriority(e.target.value)}
+              className="w-full p-1.5 bg-slate-50 border border-[#D6E4F0] rounded-lg text-slate-700 focus:outline-none focus:bg-white"
+            >
+              <option value="all">All Priorities</option>
+              <option value="Critical">Critical</option>
+              <option value="Urgent">Urgent</option>
+              <option value="High">High</option>
+              <option value="Medium">Medium</option>
+              <option value="Low">Low</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* 20 Interactive Dashboard KPI Cards (Section 5) */}
+      <div>
+        <div className="flex items-center justify-between mb-2.5">
+          <h2 className="text-xs font-black uppercase tracking-wider text-[#17324D] flex items-center gap-1.5">
+            <Inbox className="w-4 h-4 text-[#0B477F]" />
+            <span>Statutory Complaint Lifecycle KPI Cards (20 Categories)</span>
+          </h2>
+          <span className="text-[11px] text-slate-500">Every card routes strictly to its distinct filtered registry queue</span>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
           {[
-            { label: 'Total Complaints', count: stats.total, sub: 'All council records', link: '/registry', icon: Inbox, color: 'text-[#0B477F]', bg: 'bg-[#E5F1FC]' },
-            { label: 'Newly Registered', count: stats.newlyRegistered, sub: 'Intake Stage 1', link: '/registry?status=Open', icon: Clock, color: 'text-blue-600', bg: 'bg-blue-50' },
-            { label: 'Awaiting Verification', count: stats.awaitingVerification, sub: 'Scrutiny Stage 2', link: '/registry?filter=awaiting_verification', icon: FileCheck2, color: 'text-amber-600', bg: 'bg-amber-50' },
-            { label: 'Awaiting Assignment', count: stats.awaitingAssignment, sub: 'Allocation Stage 3', link: '/registry?filter=unassigned', icon: AlertTriangle, color: 'text-orange-600', bg: 'bg-orange-50' },
-            { label: 'Assigned Complaints', count: stats.assigned, sub: 'Active with Officer', link: '/registry?filter=assigned', icon: UserCheck, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-            { label: 'Under Review', count: stats.underReview, sub: 'Inquiry Stage 5', link: '/registry?status=Under%20Review', icon: Eye, color: 'text-indigo-600', bg: 'bg-indigo-50' },
-            { label: 'Awaiting Inst. Response', count: stats.awaitingInstitutionResponse, sub: 'Notice Stage 6', link: '/registry?filter=institution_response', icon: Building, color: 'text-purple-600', bg: 'bg-purple-50' },
-            { label: 'Awaiting Admin Action', count: stats.awaitingAction, sub: 'Hearing & Committee', link: '/registry?filter=action', icon: ShieldAlert, color: 'text-rose-600', bg: 'bg-rose-50' },
-            { label: 'High-Priority Complaints', count: stats.highPriority, sub: 'Immediate attention', link: '/registry?priority=High', icon: AlertCircle, color: 'text-red-600', bg: 'bg-red-50' },
-            { label: 'Overdue Complaints', count: stats.overdue, sub: 'SLA Exceeded', link: '/registry?overdue=true', icon: AlertTriangle, color: 'text-[#C43D3D]', bg: 'bg-rose-100' },
-            { label: 'Resolution Recommended', count: stats.resolutionRecommended, sub: 'Findings concluded', link: '/registry?filter=resolution_recommended', icon: CheckCircle2, color: 'text-teal-600', bg: 'bg-teal-50' },
-            { label: 'Awaiting Closure Review', count: stats.awaitingClosureReview, sub: 'Final Sanction', link: '/registry?filter=closure_review', icon: ShieldCheck, color: 'text-amber-700', bg: 'bg-amber-100' },
-            { label: 'Closed Complaints', count: stats.closed, sub: 'Disposed & archived', link: '/registry?status=Closed', icon: Check, color: 'text-slate-600', bg: 'bg-slate-100' },
-            { label: 'Reopened Complaints', count: stats.reopened, sub: 'Review mandated', link: '/registry?filter=reopened', icon: RotateCcw, color: 'text-amber-800', bg: 'bg-amber-100' }
+            { label: '1. Total Complaints', count: stats.total, sub: 'All council records', link: '/registry', icon: Inbox, color: 'text-[#0B477F]', bg: 'bg-[#E5F1FC]' },
+            { label: '2. Newly Registered', count: stats.newlyRegistered, sub: 'Intake Stage 1', link: '/registry?status=Open', icon: Clock, color: 'text-blue-600', bg: 'bg-blue-50' },
+            { label: '3. Awaiting Verification', count: stats.awaitingVerification, sub: 'Scrutiny Stage 2', link: '/registry?filter=awaiting_verification', icon: FileCheck2, color: 'text-amber-600', bg: 'bg-amber-50' },
+            { label: '4. Awaiting Assignment', count: stats.awaitingAssignment, sub: 'Allocation Stage 3', link: '/registry?filter=unassigned', icon: AlertTriangle, color: 'text-orange-600', bg: 'bg-orange-50' },
+            { label: '5. Assigned Complaints', count: stats.assigned, sub: 'Active with Officer', link: '/registry?filter=assigned', icon: UserCheck, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+            { label: '6. Under Investigation', count: stats.underInvestigation, sub: 'Stage 5 Inquiry', link: '/registry?filter=under_review', icon: Eye, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+            { label: '7. Inst. Response Pending', count: stats.awaitingInstitutionResponse, sub: 'Stage 6 Notice', link: '/registry?filter=institution_response', icon: Building, color: 'text-purple-600', bg: 'bg-purple-50' },
+            { label: '8. Additional Info Pending', count: stats.awaitingInfo, sub: 'Citizen proof awaited', link: '/registry?filter=awaiting_info', icon: HelpCircle, color: 'text-violet-600', bg: 'bg-violet-50' },
+            { label: '9. Awaiting Admin Action', count: stats.awaitingAction, sub: 'Hearing & Committee', link: '/registry?filter=action', icon: ShieldAlert, color: 'text-rose-600', bg: 'bg-rose-50' },
+            { label: '10. High-Priority Cases', count: stats.highPriority, sub: 'Immediate attention', link: '/registry?priority=High', icon: AlertCircle, color: 'text-red-600', bg: 'bg-red-50' },
+            { label: '11. Overdue Complaints', count: stats.overdue, sub: 'SLA Exceeded', link: '/registry?overdue=true', icon: AlertTriangle, color: 'text-[#C43D3D]', bg: 'bg-rose-100' },
+            { label: '12. Near SLA Deadline', count: stats.nearDeadline, sub: `≤ ${settings.approachingDeadlineDays} days left`, link: '/registry?approaching=true', icon: Clock, color: 'text-amber-700', bg: 'bg-amber-100' },
+            { label: '13. Resolution Recommended', count: stats.resolutionRecommended, sub: 'Findings concluded', link: '/registry?filter=resolution_recommended', icon: CheckCircle2, color: 'text-teal-600', bg: 'bg-teal-50' },
+            { label: '14. Awaiting Closure Review', count: stats.awaitingClosureReview, sub: 'Final Sanction', link: '/registry?filter=closure_review', icon: ShieldCheck, color: 'text-amber-800', bg: 'bg-amber-100' },
+            { label: '15. Resolved Complaints', count: stats.resolved, sub: 'Remediation completed', link: '/registry?status=Resolved', icon: Check, color: 'text-emerald-700', bg: 'bg-emerald-50' },
+            { label: '16. Closed Complaints', count: stats.closed, sub: 'Disposed & archived', link: '/registry?status=Closed', icon: FileCheck2, color: 'text-slate-600', bg: 'bg-slate-100' },
+            { label: '17. Reopened Complaints', count: stats.reopened, sub: 'Re-inquiry mandated', link: '/registry?filter=reopened', icon: RotateCcw, color: 'text-red-800', bg: 'bg-red-100' },
+            { label: '18. Escalated Complaints', count: stats.escalated, sub: 'Supervisory review', link: '/registry?filter=escalated', icon: Flame, color: 'text-orange-700', bg: 'bg-orange-100' },
+            { label: '19. Updated Today', count: stats.updatedToday, sub: 'Active today', link: '/registry?filter=updated_today', icon: History, color: 'text-blue-700', bg: 'bg-blue-100' },
+            { label: '20. No Recent Activity', count: stats.stale, sub: 'Stale > 14 days', link: '/registry?filter=stale', icon: Clock, color: 'text-zinc-600', bg: 'bg-zinc-100' }
           ].map((kpi, idx) => {
             const Icon = kpi.icon;
             return (
               <div
                 key={idx}
                 onClick={() => navigate(kpi.link)}
-                className="bg-white rounded-xl border border-[#D6E4F0] p-3.5 shadow-xs hover:border-[#0B477F] hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
+                className="bg-white rounded-xl border border-[#D6E4F0] p-3 shadow-xs hover:border-[#0B477F] hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
               >
                 <div className="flex items-center justify-between text-xs font-bold text-[#53677D]">
                   <span className="line-clamp-1 group-hover:text-[#0B477F] transition-colors">{kpi.label}</span>
-                  <div className={`w-7 h-7 rounded-lg ${kpi.bg} flex items-center justify-center shrink-0`}>
+                  <div className={`w-6 h-6 rounded-md ${kpi.bg} flex items-center justify-center shrink-0`}>
                     <Icon className={`w-3.5 h-3.5 ${kpi.color}`} />
                   </div>
                 </div>
-                <div className="mt-2">
-                  <span className={`text-2xl font-black ${kpi.color}`}>{kpi.count}</span>
-                  <span className="text-[10px] text-[#53677D] block mt-0.5 line-clamp-1">{kpi.sub}</span>
+                <div className="mt-1.5">
+                  <span className={`text-xl font-black ${kpi.color}`}>{kpi.count}</span>
+                  <span className="text-[10px] text-[#53677D] block truncate mt-0.5">{kpi.sub}</span>
                 </div>
               </div>
             );
           })}
         </div>
-      )}
+      </div>
 
-      {/* Primary Administration Navigation Tabs (Consolidates Verification, Supervision, Analytics & Users) */}
+      {/* Primary Navigation Tabs */}
       <div className="border-b border-[#D6E4F0] flex flex-wrap gap-2">
         <button
           onClick={() => setActiveTab('overview')}
-          className={`px-4 py-2.5 text-xs font-bold rounded-t-lg transition-colors border-b-2 flex items-center gap-2 ${
+          className={`px-4 py-2.5 text-xs font-bold rounded-t-lg transition border-b-2 flex items-center gap-1.5 ${
             activeTab === 'overview'
               ? 'border-[#0B477F] text-[#0B477F] bg-white shadow-xs'
               : 'border-transparent text-[#53677D] hover:text-[#17324D]'
           }`}
         >
           <Building2 className="w-4 h-4" />
-          <span>Bureau Workload & Allocation</span>
+          <span>Bureau Matrix & Allocation</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('bureau_desk')}
+          className={`px-4 py-2.5 text-xs font-bold rounded-t-lg transition border-b-2 flex items-center gap-1.5 ${
+            activeTab === 'bureau_desk'
+              ? 'border-[#0B477F] text-[#0B477F] bg-white shadow-xs'
+              : 'border-transparent text-[#53677D] hover:text-[#17324D]'
+          }`}
+        >
+          <Briefcase className="w-4 h-4 text-indigo-600" />
+          <span>Bureau Units & Investigation Desk ({bureauDeskCases.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('tasks')}
+          className={`px-4 py-2.5 text-xs font-bold rounded-t-lg transition border-b-2 flex items-center gap-1.5 ${
+            activeTab === 'tasks'
+              ? 'border-[#0B477F] text-[#0B477F] bg-white shadow-xs'
+              : 'border-transparent text-[#53677D] hover:text-[#17324D]'
+          }`}
+        >
+          <ListTodo className="w-4 h-4 text-amber-600" />
+          <span>Priority Tasks & Follow-up ({tasks.filter(t => !t.completed).length})</span>
         </button>
 
         <button
           onClick={() => setActiveTab('verification')}
-          className={`px-4 py-2.5 text-xs font-bold rounded-t-lg transition-colors border-b-2 flex items-center gap-2 ${
+          className={`px-4 py-2.5 text-xs font-bold rounded-t-lg transition border-b-2 flex items-center gap-1.5 ${
             activeTab === 'verification'
               ? 'border-[#0B477F] text-[#0B477F] bg-white shadow-xs'
               : 'border-transparent text-[#53677D] hover:text-[#17324D]'
           }`}
         >
           <FileCheck2 className="w-4 h-4 text-amber-600" />
-          <span>Document Verification & Scrutiny ({verificationQueue.length})</span>
+          <span>Document Scrutiny ({verificationQueue.length})</span>
         </button>
 
         <button
           onClick={() => setActiveTab('supervision')}
-          className={`px-4 py-2.5 text-xs font-bold rounded-t-lg transition-colors border-b-2 flex items-center gap-2 ${
+          className={`px-4 py-2.5 text-xs font-bold rounded-t-lg transition border-b-2 flex items-center gap-1.5 ${
             activeTab === 'supervision'
               ? 'border-[#0B477F] text-[#0B477F] bg-white shadow-xs'
               : 'border-transparent text-[#53677D] hover:text-[#17324D]'
           }`}
         >
           <Eye className="w-4 h-4 text-purple-600" />
-          <span>Closure Approvals & Escalations ({closureQueue.length})</span>
+          <span>Closure Approvals ({closureQueue.length})</span>
         </button>
 
         <button
           onClick={() => setActiveTab('analytics')}
-          className={`px-4 py-2.5 text-xs font-bold rounded-t-lg transition-colors border-b-2 flex items-center gap-2 ${
+          className={`px-4 py-2.5 text-xs font-bold rounded-t-lg transition border-b-2 flex items-center gap-1.5 ${
             activeTab === 'analytics'
               ? 'border-[#0B477F] text-[#0B477F] bg-white shadow-xs'
               : 'border-transparent text-[#53677D] hover:text-[#17324D]'
           }`}
         >
           <BarChart3 className="w-4 h-4 text-teal-600" />
-          <span>Executive Analytics & Reports</span>
+          <span>Executive Analytics</span>
         </button>
 
         <button
           onClick={() => setActiveTab('users')}
-          className={`px-4 py-2.5 text-xs font-bold rounded-t-lg transition-colors border-b-2 flex items-center gap-2 ${
+          className={`px-4 py-2.5 text-xs font-bold rounded-t-lg transition border-b-2 flex items-center gap-1.5 ${
             activeTab === 'users'
               ? 'border-[#0B477F] text-[#0B477F] bg-white shadow-xs'
               : 'border-transparent text-[#53677D] hover:text-[#17324D]'
           }`}
         >
           <Users className="w-4 h-4 text-blue-600" />
-          <span>Staff Accounts & Roles ({users.length})</span>
+          <span>Staff Accounts ({users.length})</span>
         </button>
 
         <button
           onClick={() => setActiveTab('sla')}
-          className={`px-4 py-2.5 text-xs font-bold rounded-t-lg transition-colors border-b-2 flex items-center gap-2 ${
+          className={`px-4 py-2.5 text-xs font-bold rounded-t-lg transition border-b-2 flex items-center gap-1.5 ${
             activeTab === 'sla'
               ? 'border-[#0B477F] text-[#0B477F] bg-white shadow-xs'
               : 'border-transparent text-[#53677D] hover:text-[#17324D]'
@@ -538,7 +906,7 @@ export const AdminDashboardPage: React.FC = () => {
         </button>
       </div>
 
-      {/* TAB 1: Operational Overview & Bureau Workload */}
+      {/* TAB 1: Bureau Matrix & Operational Overview */}
       {activeTab === 'overview' && (
         <div className="space-y-8 animate-fadeIn">
           {/* Bureau Workload Matrix */}
@@ -567,53 +935,44 @@ export const AdminDashboardPage: React.FC = () => {
                 <thead>
                   <tr className="bg-[#F1F7FC] text-[#17324D] border-y border-[#D6E4F0]">
                     <th className="py-2.5 px-4 font-bold">Bureau / Cell</th>
-                    <th className="py-2.5 px-4 font-bold">Head of Cell</th>
+                    <th className="py-2.5 px-4 font-bold">Incharge Officer</th>
                     <th className="py-2.5 px-3 font-bold text-center">Total Cases</th>
-                    <th className="py-2.5 px-3 font-bold text-center">Active</th>
+                    <th className="py-2.5 px-3 font-bold text-center text-blue-700">Active</th>
+                    <th className="py-2.5 px-3 font-bold text-center text-amber-700">Notice Dispatched</th>
                     <th className="py-2.5 px-3 font-bold text-center text-red-600">Overdue</th>
                     <th className="py-2.5 px-3 font-bold text-center text-emerald-600">Resolved</th>
-                    <th className="py-2.5 px-4 font-bold">Capacity Load</th>
+                    <th className="py-2.5 px-4 font-bold text-right">Quick Filter</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#D6E4F0]">
-                  {bureauWorkload.map(b => {
-                    const loadPercentage = Math.min(100, Math.round((b.active / 10) * 100));
-
-                    return (
-                      <tr key={b.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="py-3 px-4">
-                          <p className="font-bold text-[#17324D]">{b.name}</p>
-                          <p className="text-[11px] text-[#53677D] font-mono">{b.code}</p>
-                        </td>
-                        <td className="py-3 px-4 text-[#53677D]">{b.officerInCharge}</td>
-                        <td className="py-3 px-3 text-center font-bold text-[#17324D]">{b.total}</td>
-                        <td className="py-3 px-3 text-center font-bold text-blue-700">{b.active}</td>
-                        <td className="py-3 px-3 text-center font-bold text-red-600">{b.overdue}</td>
-                        <td className="py-3 px-3 text-center font-bold text-emerald-600">{b.resolved}</td>
-                        <td className="py-3 px-4 w-44">
-                          <div className="flex items-center gap-2">
-                            <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
-                              <div
-                                className={`h-2 rounded-full ${
-                                  loadPercentage > 75 ? 'bg-red-500' : loadPercentage > 45 ? 'bg-amber-500' : 'bg-emerald-500'
-                                }`}
-                                style={{ width: `${loadPercentage}%` }}
-                              />
-                            </div>
-                            <span className="text-[11px] font-semibold text-[#53677D] w-8">
-                              {loadPercentage}%
-                            </span>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {bureauWorkload.map(b => (
+                    <tr key={b.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="py-3 px-4">
+                        <p className="font-bold text-[#17324D]">{b.name}</p>
+                        <p className="text-[11px] text-[#53677D] font-mono">{b.code}</p>
+                      </td>
+                      <td className="py-3 px-4 text-[#53677D]">{b.officerInCharge}</td>
+                      <td className="py-3 px-3 text-center font-bold text-[#17324D]">{b.total}</td>
+                      <td className="py-3 px-3 text-center font-bold text-blue-700">{b.active}</td>
+                      <td className="py-3 px-3 text-center font-bold text-amber-700">{b.awaitingNotice}</td>
+                      <td className="py-3 px-3 text-center font-bold text-red-600">{b.overdue}</td>
+                      <td className="py-3 px-3 text-center font-bold text-emerald-600">{b.resolved}</td>
+                      <td className="py-3 px-4 text-right">
+                        <button
+                          onClick={() => navigate(`/registry?bureau=${b.id}`)}
+                          className="px-2.5 py-1 text-[11px] font-bold text-[#0B477F] bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 transition"
+                        >
+                          View Queue
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
           </div>
 
-          {/* Case Ageing Buckets + User Directory */}
+          {/* Ageing & Quick Visuals */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="bg-white rounded-xl border border-[#D6E4F0] p-6 shadow-sm">
               <h2 className="text-base font-bold text-[#17324D] mb-1 flex items-center gap-2">
@@ -625,7 +984,10 @@ export const AdminDashboardPage: React.FC = () => {
               </p>
 
               <div className="space-y-3">
-                <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-between">
+                <div
+                  onClick={() => navigate('/registry?search=2026-10')}
+                  className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-between cursor-pointer hover:border-emerald-400 transition"
+                >
                   <div>
                     <p className="text-xs font-bold text-emerald-900">&le; 7 Days (Fresh Intake)</p>
                     <p className="text-[11px] text-emerald-700">Within preliminary inquiry phase</p>
@@ -633,7 +995,10 @@ export const AdminDashboardPage: React.FC = () => {
                   <span className="text-lg font-black text-emerald-800">{ageingBuckets.less7}</span>
                 </div>
 
-                <div className="p-3 rounded-lg bg-blue-50 border border-blue-200 flex items-center justify-between">
+                <div
+                  onClick={() => navigate('/registry')}
+                  className="p-3 rounded-lg bg-blue-50 border border-blue-200 flex items-center justify-between cursor-pointer hover:border-blue-400 transition"
+                >
                   <div>
                     <p className="text-xs font-bold text-blue-900">8 &ndash; 15 Days (Active Review)</p>
                     <p className="text-[11px] text-blue-700">Institution explanation sought</p>
@@ -641,7 +1006,10 @@ export const AdminDashboardPage: React.FC = () => {
                   <span className="text-lg font-black text-blue-800">{ageingBuckets.b8to15}</span>
                 </div>
 
-                <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-between">
+                <div
+                  onClick={() => navigate('/registry?approaching=true')}
+                  className="p-3 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-between cursor-pointer hover:border-amber-400 transition"
+                >
                   <div>
                     <p className="text-xs font-bold text-amber-900">16 &ndash; 30 Days (Approaching SLA)</p>
                     <p className="text-[11px] text-amber-700">Priority follow-up mandated</p>
@@ -649,7 +1017,10 @@ export const AdminDashboardPage: React.FC = () => {
                   <span className="text-lg font-black text-amber-800">{ageingBuckets.b16to30}</span>
                 </div>
 
-                <div className="p-3 rounded-lg bg-red-50 border border-red-200 flex items-center justify-between">
+                <div
+                  onClick={() => navigate('/registry?overdue=true')}
+                  className="p-3 rounded-lg bg-red-50 border border-red-200 flex items-center justify-between cursor-pointer hover:border-red-400 transition"
+                >
                   <div>
                     <p className="text-xs font-bold text-red-900">&gt; 30 Days (Critical Overdue)</p>
                     <p className="text-[11px] text-red-700">Subject to supervisory escalation</p>
@@ -659,64 +1030,156 @@ export const AdminDashboardPage: React.FC = () => {
               </div>
             </div>
 
+            {/* Chronic Institutions */}
             <div className="lg:col-span-2 bg-white rounded-xl border border-[#D6E4F0] p-6 shadow-sm">
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-between mb-3">
                 <div>
                   <h2 className="text-base font-bold text-[#17324D] flex items-center gap-2">
-                    <Users className="w-4 h-4 text-[#0B477F]" />
-                    <span>Authorized System Users & Access Privileges</span>
+                    <Building className="w-4 h-4 text-[#0B477F]" />
+                    <span>Institution Grievance Concentrations</span>
                   </h2>
                   <p className="text-xs text-[#53677D]">
-                    Active personnel accounts across AICTE cells.
+                    Colleges with multiple active filings (Statutory intake surveillance).
                   </p>
                 </div>
-                <span className="text-xs font-semibold px-2 py-1 bg-[#F1F7FC] text-[#0B477F] rounded border border-[#D6E4F0]">
-                  {INITIAL_USERS.length} Accounts
-                </span>
+                <Link
+                  to="/institutions"
+                  className="text-xs font-bold text-[#0B477F] hover:underline"
+                >
+                  Full Directory
+                </Link>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="bg-[#F1F7FC] text-[#17324D] border-y border-[#D6E4F0]">
-                      <th className="py-2 px-3 font-bold">Officer / User</th>
-                      <th className="py-2 px-3 font-bold">Role</th>
-                      <th className="py-2 px-3 font-bold">Assigned Cell</th>
-                      <th className="py-2 px-3 font-bold">Contact Email</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#D6E4F0]">
-                    {INITIAL_USERS.map(user => (
-                      <tr key={user.id} className="hover:bg-slate-50">
-                        <td className="py-2.5 px-3">
-                          <p className="font-bold text-[#17324D]">{user.name}</p>
-                          <p className="text-[11px] text-[#53677D]">{user.designation}</p>
-                        </td>
-                        <td className="py-2.5 px-3">
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-[#0B477F] border border-slate-200">
-                            {user.role}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-3 text-[#53677D]">
-                          {user.bureauName || 'Central / Citizen'}
-                        </td>
-                        <td className="py-2.5 px-3 font-mono text-[11px] text-[#53677D]">
-                          {user.email}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="divide-y divide-[#D6E4F0] max-h-60 overflow-y-auto">
+                {chronicInstitutions.map((item, idx) => (
+                  <div
+                    key={idx}
+                    onClick={() => navigate(`/registry?search=${encodeURIComponent(item.name)}`)}
+                    className="py-2.5 px-2 flex items-center justify-between hover:bg-slate-50 cursor-pointer rounded-lg transition"
+                  >
+                    <div>
+                      <p className="font-bold text-xs text-[#17324D]">{item.name}</p>
+                      <p className="text-[11px] text-[#53677D] font-mono">{item.code || 'AICTE-CODE-RECORD'}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded-full text-xs font-black bg-blue-50 text-[#0B477F] border border-blue-200">
+                        {item.count} complaints
+                      </span>
+                      <ArrowRight className="w-3.5 h-3.5 text-slate-400" />
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* TAB 2: Document Scrutiny & Verification (Consolidated from Verification Staff) */}
+      {/* TAB 2: Bureau Units & Investigation Desk (Integrated from Officer Portal) */}
+      {activeTab === 'bureau_desk' && (
+        <div className="bg-white rounded-xl shadow-xs border border-slate-200 p-6 space-y-5 animate-fadeIn">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
+            <div>
+              <h3 className="text-base font-black text-[#17324D] flex items-center gap-2">
+                <Briefcase className="w-5 h-5 text-indigo-700" />
+                <span>Integrated Bureau Investigation Desk</span>
+              </h3>
+              <p className="text-xs text-[#53677D] mt-0.5">
+                Examine evidence, dispatch statutory inquiry notices, register college rejoinders, and formulate formal resolutions.
+              </p>
+            </div>
+            <span className="px-3 py-1 bg-indigo-50 text-indigo-800 text-xs font-bold rounded-full border border-indigo-200">
+              {bureauDeskCases.length} Cases in Desk Queue
+            </span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-[#F1F7FC] text-[#17324D] border-b border-[#D6E4F0] font-bold text-[11px] uppercase tracking-wider">
+                  <th className="py-2.5 px-3">Token</th>
+                  <th className="py-2.5 px-3">Institution & Subject</th>
+                  <th className="py-2.5 px-3">Category</th>
+                  <th className="py-2.5 px-3">Bureau & Handler</th>
+                  <th className="py-2.5 px-3">Stage / Status</th>
+                  <th className="py-2.5 px-3">Deadline</th>
+                  <th className="py-2.5 px-3 text-right">Desk Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#D6E4F0]">
+                {bureauDeskCases.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-12 text-center text-slate-400">
+                      No complaints assigned to desk queue.
+                    </td>
+                  </tr>
+                ) : (
+                  bureauDeskCases.map(c => {
+                    const isCaseOverdue = isOverdue(c.deadlineDate, c.status);
+
+                    return (
+                      <tr key={c.id} className="hover:bg-slate-50 transition">
+                        <td className="py-3 px-3 font-mono font-bold text-[#0B477F] whitespace-nowrap">
+                          {c.id}
+                        </td>
+                        <td className="py-3 px-3 max-w-xs">
+                          <p className="font-semibold text-[#17324D] truncate">{c.institutionName}</p>
+                          <p className="text-[11px] text-[#53677D] truncate mt-0.5">{c.title}</p>
+                        </td>
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-700">
+                            {c.category}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          <p className="font-semibold text-slate-800">{c.bureauName}</p>
+                          <p className="text-[10px] text-slate-500">{c.assignedOfficerName}</p>
+                        </td>
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200">
+                            {c.status}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          <span className={`font-semibold ${isCaseOverdue ? 'text-red-700 font-bold' : 'text-slate-700'}`}>
+                            {formatDate(c.deadlineDate)}
+                          </span>
+                          {isCaseOverdue && <span className="block text-[9px] text-red-600 font-bold">OVERDUE</span>}
+                        </td>
+                        <td className="py-3 px-3 text-right whitespace-nowrap">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => {
+                                setSelectedDeskCaseId(c.id);
+                                setDeskDrawerTab('actions');
+                              }}
+                              className="px-2.5 py-1 bg-[#0B477F] text-white rounded text-[11px] font-bold hover:bg-[#155A91] transition flex items-center gap-1 shadow-xs"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              <span>Examine</span>
+                            </button>
+                            <Link
+                              to={`/case/${c.id}`}
+                              className="p-1 text-slate-500 hover:text-[#0B477F] rounded hover:bg-slate-100"
+                              title="Full Docket View"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </Link>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: Document Verification & Scrutiny */}
       {activeTab === 'verification' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-fadeIn">
-          {/* Left 2 Cols: Queue */}
           <div className="lg:col-span-2 space-y-4">
             <div className="bg-white rounded-xl border border-[#D6E4F0] p-6 shadow-sm">
               <div className="flex items-center justify-between mb-4">
@@ -748,35 +1211,16 @@ export const AdminDashboardPage: React.FC = () => {
                           : 'border-[#D6E4F0] bg-white hover:border-[#155A91] hover:bg-slate-50'
                       }`}
                     >
-                      <div className="flex items-center justify-between mb-1.5">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-xs font-bold text-[#0B477F]">{c.id}</span>
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              vStatus === 'Verified'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : vStatus === 'Needs Information'
-                                ? 'bg-blue-100 text-blue-800'
-                                : 'bg-amber-100 text-amber-800'
-                            }`}
-                          >
-                            {vStatus}
-                          </span>
-                        </div>
-                        <span className="text-[11px] text-[#53677D]">Docketed: {c.submissionDate}</span>
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-xs font-bold text-[#0B477F]">{c.id}</span>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          vStatus === 'Verified' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                        }`}>
+                          {vStatus}
+                        </span>
                       </div>
-
-                      <h4 className="text-sm font-bold text-[#17324D] mb-1 line-clamp-1">{c.title}</h4>
-
-                      <div className="flex items-center gap-2 text-xs text-[#53677D]">
-                        <Building className="w-3.5 h-3.5 shrink-0" />
-                        <span className="truncate">{c.institutionName}</span>
-                        {c.institutionCode && (
-                          <span className="font-mono text-[10px] bg-white px-1.5 py-0.2 rounded border border-[#D6E4F0]">
-                            {c.institutionCode}
-                          </span>
-                        )}
-                      </div>
+                      <p className="text-xs font-bold text-[#17324D] mt-1">{c.institutionName}</p>
+                      <p className="text-[11px] text-[#53677D] line-clamp-1">{c.title}</p>
                     </div>
                   );
                 })}
@@ -784,137 +1228,76 @@ export const AdminDashboardPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Right Col: Scrutiny Controls */}
-          <div>
-            {activeVerifyCase ? (
-              <div className="bg-white rounded-xl border border-[#D6E4F0] p-6 shadow-sm sticky top-6 space-y-4">
-                <div>
-                  <span className="font-mono text-xs font-bold text-[#0B477F]">{activeVerifyCase.id}</span>
-                  <h4 className="text-sm font-bold text-[#17324D] mt-1">{activeVerifyCase.title}</h4>
-                  <p className="text-xs text-[#53677D] mt-1">{activeVerifyCase.institutionName}</p>
+          {/* Action Pane */}
+          {activeVerifyCase && (
+            <div className="bg-white rounded-xl border border-[#D6E4F0] p-6 shadow-sm space-y-4">
+              <h3 className="text-sm font-bold text-[#17324D] border-b pb-2">
+                Scrutiny Action: {activeVerifyCase.id}
+              </h3>
+              {verifySuccessMsg && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 rounded-lg font-bold">
+                  {verifySuccessMsg}
                 </div>
-
-                {verifySuccessMsg && (
-                  <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 font-semibold flex items-center gap-2">
-                    <Check className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>{verifySuccessMsg}</span>
-                  </div>
-                )}
-
-                {/* Institution Registry Check */}
-                <div className="bg-[#F1F7FC] border border-[#D6E4F0] rounded-lg p-3 space-y-2 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[#53677D]">AICTE Directory Code:</span>
-                    <strong className="font-mono text-[#0B477F]">{activeVerifyCase.institutionCode || 'N/A'}</strong>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[#53677D]">Approval Validity:</span>
-                    {matchedInstitutionForVerify ? (
-                      <span className="text-emerald-700 font-bold flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        Approved Technical Institute
-                      </span>
-                    ) : (
-                      <span className="text-amber-700 font-bold flex items-center gap-1">
-                        <AlertTriangle className="w-3.5 h-3.5" />
-                        Unverified Code
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Checklist */}
-                <div className="space-y-1.5 text-xs">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" defaultChecked className="rounded text-[#0B477F]" />
-                    <span>Complainant bonafide details provided</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" defaultChecked className="rounded text-[#0B477F]" />
-                    <span>Prima facie AICTE jurisdiction confirmed</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" defaultChecked className="rounded text-[#0B477F]" />
-                    <span>Sufficient factual description provided</span>
-                  </label>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-[#17324D] mb-1">
-                    Scrutiny Remarks
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={verifyRemarks}
-                    onChange={(e) => setVerifyRemarks(e.target.value)}
-                    placeholder="Enter verification directive or defect notes..."
-                    className="w-full text-xs p-2 rounded-lg border border-[#D6E4F0] focus:ring-1 focus:ring-[#0B477F] focus:outline-none"
-                  />
-                </div>
-
-                <div className="space-y-2 pt-2 border-t border-[#D6E4F0]">
-                  <button
-                    type="button"
-                    onClick={() => handleVerifyAction('Verified')}
-                    className="w-full py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm"
-                  >
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>Mark Verified & Advance to Bureau Assignment</span>
-                  </button>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleVerifyAction('Needs Information')}
-                      className="py-2 px-2 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-800 rounded-lg text-xs font-bold flex items-center justify-center gap-1"
-                    >
-                      <HelpCircle className="w-3.5 h-3.5" />
-                      <span>Needs Info</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleVerifyAction('Flagged')}
-                      className="py-2 px-2 bg-red-50 hover:bg-red-100 border border-red-200 text-red-800 rounded-lg text-xs font-bold flex items-center justify-center gap-1"
-                    >
-                      <ShieldAlert className="w-3.5 h-3.5" />
-                      <span>Flag Defect</span>
-                    </button>
-                  </div>
-                </div>
+              )}
+              <div className="text-xs space-y-2 text-[#53677D]">
+                <p><strong>Institution:</strong> {activeVerifyCase.institutionName}</p>
+                <p><strong>Code:</strong> {activeVerifyCase.institutionCode || 'N/A'}</p>
+                <p><strong>Category:</strong> {activeVerifyCase.category}</p>
+                <p className="bg-slate-50 p-2.5 rounded border text-slate-700">{activeVerifyCase.description}</p>
               </div>
-            ) : (
-              <p className="text-xs text-[#53677D] text-center p-6 bg-white rounded-xl border border-[#D6E4F0]">
-                All intake cases verified.
-              </p>
-            )}
-          </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Scrutiny Remarks</label>
+                <textarea
+                  rows={2}
+                  value={verifyRemarks}
+                  onChange={e => setVerifyRemarks(e.target.value)}
+                  placeholder="Record verification findings..."
+                  className="w-full text-xs p-2.5 border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#0B477F]"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => handleVerifyAction('Verified')}
+                  className="py-2 px-3 bg-emerald-700 text-white rounded-lg text-xs font-bold hover:bg-emerald-800 transition"
+                >
+                  Confirm Verified
+                </button>
+                <button
+                  onClick={() => handleVerifyAction('Needs Information')}
+                  className="py-2 px-3 bg-amber-600 text-white rounded-lg text-xs font-bold hover:bg-amber-700 transition"
+                >
+                  Request Clarification
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* TAB 3: Closure Approvals & Escalations (Consolidated from Supervisor) */}
+      {/* TAB 4: Supervisory Sanctions & Closure Approvals */}
       {activeTab === 'supervision' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-fadeIn">
-          {/* Left 2 Cols: Closure & Escalation Queue */}
           <div className="lg:col-span-2 space-y-4">
             <div className="bg-white rounded-xl border border-[#D6E4F0] p-6 shadow-sm">
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h3 className="text-base font-bold text-[#17324D]">
-                    Appellate Closure Sign-Off & Escalation Desk
+                    Executive Sanction & Case Closure Desk
                   </h3>
                   <p className="text-xs text-[#53677D]">
-                    Review proposed case resolutions submitted by handling officers, confirm final closure, or remand for inquiry.
+                    Approve final statutory disposal after reviewing officer findings and institution remediation.
                   </p>
                 </div>
                 <span className="text-xs font-bold px-2.5 py-1 bg-purple-50 text-purple-800 rounded border border-purple-200">
-                  {closureQueue.length} Cases
+                  {closureQueue.length} Ready
                 </span>
               </div>
 
               <div className="space-y-3">
                 {closureQueue.map(c => {
                   const isSelected = activeSupervisoryCase?.id === c.id;
-                  const isApproved = Boolean(c.closureApprovedBy);
 
                   return (
                     <div
@@ -922,37 +1305,18 @@ export const AdminDashboardPage: React.FC = () => {
                       onClick={() => setSelectedSupervisoryCaseId(c.id)}
                       className={`p-4 rounded-xl border transition-all cursor-pointer ${
                         isSelected
-                          ? 'border-[#0B477F] bg-[#F1F7FC] ring-1 ring-[#0B477F] shadow-sm'
-                          : 'border-[#D6E4F0] bg-white hover:border-[#155A91] hover:bg-slate-50'
+                          ? 'border-purple-600 bg-purple-50/50 ring-1 ring-purple-600 shadow-sm'
+                          : 'border-[#D6E4F0] bg-white hover:border-purple-300'
                       }`}
                     >
-                      <div className="flex items-center justify-between mb-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-xs font-bold text-[#0B477F]">{c.id}</span>
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-[#17324D]">
-                            {c.bureauName}
-                          </span>
-                          {c.status === 'Resolved' && !isApproved && (
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800">
-                              Awaiting Closure Sign-off
-                            </span>
-                          )}
-                          {isApproved && (
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                              Closed & Signed
-                            </span>
-                          )}
-                        </div>
-                        <span className="text-[11px] text-[#53677D]">Status: {c.status}</span>
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-xs font-bold text-[#0B477F]">{c.id}</span>
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-teal-100 text-teal-800">
+                          {c.status}
+                        </span>
                       </div>
-
-                      <h4 className="text-sm font-bold text-[#17324D] mb-1 line-clamp-1">{c.title}</h4>
-
-                      {c.resolutionSummary && (
-                        <div className="p-2 bg-emerald-50 border border-emerald-200 rounded text-xs text-emerald-900 mt-2">
-                          <strong>Resolution Summary:</strong> {c.resolutionSummary}
-                        </div>
-                      )}
+                      <p className="text-xs font-bold text-[#17324D] mt-1">{c.institutionName}</p>
+                      <p className="text-[11px] text-[#53677D] line-clamp-1">{c.resolutionRecommendation || c.title}</p>
                     </div>
                   );
                 })}
@@ -960,169 +1324,222 @@ export const AdminDashboardPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Right Col: Supervisory Actions */}
-          <div>
-            {activeSupervisoryCase ? (
-              <div className="bg-white rounded-xl border border-[#D6E4F0] p-6 shadow-sm sticky top-6 space-y-4">
-                <div>
-                  <span className="font-mono text-xs font-bold text-[#0B477F]">{activeSupervisoryCase.id}</span>
-                  <h4 className="text-sm font-bold text-[#17324D] mt-1">{activeSupervisoryCase.title}</h4>
-                  <p className="text-xs text-[#53677D] mt-1">{activeSupervisoryCase.institutionName}</p>
+          {activeSupervisoryCase && (
+            <div className="bg-white rounded-xl border border-[#D6E4F0] p-6 shadow-sm space-y-4">
+              <h3 className="text-sm font-bold text-[#17324D] border-b pb-2">
+                Executive Action: {activeSupervisoryCase.id}
+              </h3>
+              {supervisorySuccessMsg && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 rounded-lg font-bold">
+                  {supervisorySuccessMsg}
                 </div>
+              )}
+              <div className="text-xs space-y-2 text-[#53677D]">
+                <p><strong>Institution:</strong> {activeSupervisoryCase.institutionName}</p>
+                <p><strong>Assigned Bureau:</strong> {activeSupervisoryCase.bureauName}</p>
+                <p><strong>Officer Recommendation:</strong></p>
+                <p className="bg-emerald-50 p-2.5 rounded border border-emerald-200 text-emerald-900 font-medium">
+                  {activeSupervisoryCase.resolutionRecommendation || 'Resolution drafted based on verified compliance documents.'}
+                </p>
+              </div>
 
-                {supervisorySuccessMsg && (
-                  <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 font-semibold flex items-center gap-2">
-                    <Check className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>{supervisorySuccessMsg}</span>
-                  </div>
-                )}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Supervisory Sanction Directive</label>
+                <textarea
+                  rows={2}
+                  value={supervisoryNotes}
+                  onChange={e => setSupervisoryNotes(e.target.value)}
+                  placeholder="Record final closure rationale..."
+                  className="w-full text-xs p-2.5 border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#0B477F]"
+                />
+              </div>
 
-                <div className="bg-[#F1F7FC] rounded-lg p-3 text-xs space-y-1 text-[#53677D]">
-                  <div><strong>Handling Officer:</strong> {activeSupervisoryCase.assignedOfficerName || 'N/A'}</div>
-                  <div><strong>Bureau:</strong> {activeSupervisoryCase.bureauName}</div>
-                  <div><strong>Category:</strong> {activeSupervisoryCase.category}</div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-[#17324D] mb-1">
-                    Supervisory Order / Rationale
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={supervisoryNotes}
-                    onChange={(e) => setSupervisoryNotes(e.target.value)}
-                    placeholder="Enter compliance sign-off rationale or remand directives..."
-                    className="w-full text-xs p-2 rounded-lg border border-[#D6E4F0] focus:ring-1 focus:ring-[#0B477F] focus:outline-none"
-                  />
-                </div>
-
-                <div className="grid grid-cols-3 gap-2 pt-2 border-t border-[#D6E4F0]">
+              {hasPermission('approve_closure') ? (
+                <div className="grid grid-cols-2 gap-2">
                   <button
-                    type="button"
                     onClick={() => handleClosureAction(true)}
-                    className="py-2.5 px-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1 shadow-sm"
+                    className="py-2.5 px-3 bg-emerald-700 text-white rounded-lg text-xs font-bold hover:bg-emerald-800 transition"
                   >
-                    <Check className="w-4 h-4" />
-                    <span>Approve Closure</span>
+                    Approve & Close Case
                   </button>
-
                   <button
-                    type="button"
                     onClick={() => handleClosureAction(false)}
-                    className="py-2.5 px-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1 shadow-sm"
+                    className="py-2.5 px-3 bg-rose-700 text-white rounded-lg text-xs font-bold hover:bg-rose-800 transition"
                   >
-                    <RotateCcw className="w-4 h-4" />
-                    <span>Remand Case</span>
+                    Remand for Inquest
+                  </button>
+                </div>
+              ) : (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded text-xs text-amber-900">
+                  Notice: Final case closure requires Central Nodal Administrator authorization.
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 5: Priority Tasks & Follow-up Center (Section 16) */}
+      {activeTab === 'tasks' && (
+        <div className="bg-white rounded-xl shadow-xs border border-slate-200 p-6 space-y-4 animate-fadeIn">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
+            <div>
+              <h3 className="text-base font-black text-[#17324D] flex items-center gap-2">
+                <ListTodo className="w-5 h-5 text-amber-600" />
+                <span>Administration Task & Follow-up Center</span>
+              </h3>
+              <p className="text-xs text-[#53677D] mt-0.5">
+                Statutory follow-up items linked to complaint files, sorted by statutory urgency.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setTaskFilter('ALL')}
+                className={`px-3 py-1 text-xs font-bold rounded-lg transition ${
+                  taskFilter === 'ALL' ? 'bg-[#0B477F] text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                All ({tasks.length})
+              </button>
+              <button
+                onClick={() => setTaskFilter('CRITICAL')}
+                className={`px-3 py-1 text-xs font-bold rounded-lg transition ${
+                  taskFilter === 'CRITICAL' ? 'bg-red-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                Critical
+              </button>
+              <button
+                onClick={() => setTaskFilter('PENDING')}
+                className={`px-3 py-1 text-xs font-bold rounded-lg transition ${
+                  taskFilter === 'PENDING' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                Pending ({tasks.filter(t => !t.completed).length})
+              </button>
+              <button
+                onClick={() => setNewTaskModalOpen(true)}
+                className="px-3 py-1 bg-amber-600 text-white text-xs font-bold rounded-lg hover:bg-amber-700 transition flex items-center gap-1"
+              >
+                <PlusCircle className="w-3.5 h-3.5" />
+                <span>New Task</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-2.5">
+            {filteredTasks.map(t => (
+              <div
+                key={t.id}
+                className={`p-4 rounded-xl border transition flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
+                  t.completed ? 'bg-slate-50 opacity-60' : t.priority === 'Critical' ? 'bg-rose-50/60 border-rose-200' : 'bg-white border-slate-200'
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <button
+                    onClick={() => toggleTask(t.id)}
+                    className={`mt-0.5 w-5 h-5 rounded border flex items-center justify-center transition shrink-0 ${
+                      t.completed ? 'bg-emerald-600 border-emerald-600 text-white' : 'border-slate-300 hover:border-blue-600 bg-white'
+                    }`}
+                  >
+                    {t.completed && <Check className="w-3.5 h-3.5" />}
                   </button>
 
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2 py-0.2 rounded text-[10px] font-bold ${
+                        t.priority === 'Critical' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'
+                      }`}>
+                        {t.priority.toUpperCase()}
+                      </span>
+                      {t.complaintId && <span className="font-mono text-xs font-bold text-[#0B477F]">{t.complaintId}</span>}
+                      {t.institutionName && <span className="text-xs text-slate-600 font-semibold">• {t.institutionName}</span>}
+                    </div>
+                    <p className={`text-xs font-bold text-slate-800 mt-1 ${t.completed ? 'line-through text-slate-500' : ''}`}>
+                      {t.title}
+                    </p>
+                    <p className="text-[11px] text-slate-500 mt-0.5">Assigned to: {t.assignedToName} &bull; Target SLA: {formatDate(t.dueDate)}</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                  {t.complaintId && (
+                    <button
+                      onClick={() => navigate(`/case/${t.complaintId}`)}
+                      className="px-3 py-1.5 bg-[#0B477F] text-white text-xs font-bold rounded-lg hover:bg-[#155A91] transition flex items-center gap-1"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>Open Case</span>
+                    </button>
+                  )}
                   <button
-                    type="button"
-                    onClick={() => {
-                      reopenComplaint(activeSupervisoryCase.id, supervisoryNotes || 'Reopened by administrative authority');
-                      setSupervisorySuccessMsg(`Case ${activeSupervisoryCase.id} successfully reopened.`);
-                      setTimeout(() => setSupervisorySuccessMsg(null), 3000);
-                    }}
-                    className="py-2.5 px-2 bg-purple-700 hover:bg-purple-800 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1 shadow-sm"
+                    onClick={() => deleteTask(t.id)}
+                    className="p-1.5 text-slate-400 hover:text-red-600 rounded transition"
+                    title="Delete task"
                   >
-                    <RotateCcw className="w-4 h-4" />
-                    <span>Reopen Case</span>
+                    <X className="w-4 h-4" />
                   </button>
                 </div>
               </div>
-            ) : (
-              <p className="text-xs text-[#53677D] text-center p-6 bg-white rounded-xl border border-[#D6E4F0]">
-                No cases awaiting closure.
-              </p>
-            )}
+            ))}
           </div>
         </div>
       )}
 
-      {/* TAB 4: Executive Analytics & Reports (Consolidated from Management User) */}
+      {/* TAB 6: Executive Analytics & Reports (Section 18) */}
       {activeTab === 'analytics' && (
-        <div className="space-y-8 animate-fadeIn">
-          {/* Header Action Bar */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#F1F7FC] p-4 rounded-xl border border-[#D6E4F0]">
+        <div className="space-y-6 animate-fadeIn">
+          <div className="bg-white rounded-xl border border-[#D6E4F0] p-6 shadow-sm flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-bold text-[#17324D]">
-                Integrated Complaint Intelligence & Macro Analytics
-              </h3>
+              <h2 className="text-base font-bold text-[#17324D] flex items-center gap-2">
+                <BarChart3 className="w-4 h-4 text-[#0B477F]" />
+                <span>Executive Turnaround & Bureau Analytics</span>
+              </h2>
               <p className="text-xs text-[#53677D]">
-                Statistical benchmarks, bureau turnaround metrics, and chronic institutional pattern detection.
+                Council-wide performance indicators, turnaround curves, and compliance patterns.
               </p>
             </div>
             <button
               onClick={handleExportCSV}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-[#0B477F] text-white text-xs font-bold rounded-lg hover:bg-[#155A91] transition-all shadow-sm shrink-0"
+              className="px-3.5 py-2 bg-[#0B477F] text-white text-xs font-bold rounded-lg hover:bg-[#155A91] transition flex items-center gap-1.5"
             >
-              {downloadSuccess ? (
-                <>
-                  <Check className="w-4 h-4 text-emerald-300" />
-                  <span>Report Downloaded</span>
-                </>
-              ) : (
-                <>
-                  <Download className="w-4 h-4" />
-                  <span>Export Analytics CSV</span>
-                </>
-              )}
+              <Download className="w-3.5 h-3.5" />
+              <span>Export Executive CSV</span>
             </button>
           </div>
 
-          {/* Quick Metrics */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-white rounded-xl border border-[#D6E4F0] p-4 shadow-sm">
-              <span className="text-xs font-bold text-[#53677D] uppercase">Average Turnaround Time</span>
-              <p className="text-2xl font-black text-blue-700 mt-1">{avgResolutionDays} Days</p>
-              <p className="text-[11px] text-[#53677D]">Calculated strictly from resolved complaints</p>
-            </div>
-            <div className="bg-white rounded-xl border border-[#D6E4F0] p-4 shadow-sm">
-              <span className="text-xs font-bold text-[#53677D] uppercase">Overall Clearance Rate</span>
-              <p className="text-2xl font-black text-emerald-700 mt-1">
-                {Math.round((resolvedCases.length / complaints.length) * 100)}%
-              </p>
-              <p className="text-[11px] text-[#53677D]">{resolvedCases.length} of {complaints.length} cases closed</p>
-            </div>
-            <div className="bg-white rounded-xl border border-[#D6E4F0] p-4 shadow-sm">
-              <span className="text-xs font-bold text-[#53677D] uppercase">Chronic Institution Clusters</span>
-              <p className="text-2xl font-black text-amber-700 mt-1">{chronicInstitutions.length}</p>
-              <p className="text-[11px] text-[#53677D]">Institutions with &ge; 3 repeat grievances</p>
-            </div>
-          </div>
-
-          {/* Charts Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-white rounded-xl border border-[#D6E4F0] p-6 shadow-sm">
-              <h4 className="text-sm font-bold text-[#17324D] mb-1">Bureau Active vs. Resolved Distribution</h4>
-              <p className="text-xs text-[#53677D] mb-4">Clearance efficiency across AICTE specialized cells.</p>
+            <div className="bg-white rounded-xl border border-[#D6E4F0] p-5 shadow-sm">
+              <h3 className="text-xs font-bold text-slate-700 uppercase mb-3">Bureau Workload & Overdue Matrix</h3>
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={bureauChartData} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5F1FC" />
-                    <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#53677D' }} angle={-15} textAnchor="end" />
-                    <YAxis tick={{ fontSize: 10, fill: '#53677D' }} />
-                    <Tooltip contentStyle={{ backgroundColor: '#fff', borderColor: '#D6E4F0', borderRadius: '8px', fontSize: '11px' }} />
-                    <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
-                    <Bar dataKey="Active" fill="#155A91" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="Resolved" fill="#237A50" radius={[4, 4, 0, 0]} />
+                  <BarChart data={bureauChartData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
+                    <Tooltip />
+                    <Legend />
+                    <Bar dataKey="Active" fill="#0B477F" onClick={(entry: any) => navigate(`/registry?bureau=${entry.id}`)} />
+                    <Bar dataKey="Overdue" fill="#C43D3D" onClick={() => navigate('/registry?overdue=true')} />
+                    <Bar dataKey="Resolved" fill="#237A50" onClick={() => navigate('/registry?status=Resolved')} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
             </div>
 
-            <div className="bg-white rounded-xl border border-[#D6E4F0] p-6 shadow-sm">
-              <h4 className="text-sm font-bold text-[#17324D] mb-1">Complaint Category Breakdown</h4>
-              <p className="text-xs text-[#53677D] mb-4">Distribution of grievance themes across institutions.</p>
-              <div className="h-64 flex items-center justify-center">
+            <div className="bg-white rounded-xl border border-[#D6E4F0] p-5 shadow-sm">
+              <h3 className="text-xs font-bold text-slate-700 uppercase mb-3">Grievance Distribution by Category</h3>
+              <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie data={categoryChartData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3} dataKey="value">
+                    <Pie data={categoryChartData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
                       {categoryChartData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
                     </Pie>
-                    <Tooltip contentStyle={{ backgroundColor: '#fff', borderColor: '#D6E4F0', borderRadius: '8px', fontSize: '11px' }} />
-                    <Legend wrapperStyle={{ fontSize: '10px' }} />
+                    <Tooltip />
+                    <Legend />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
@@ -1131,466 +1548,681 @@ export const AdminDashboardPage: React.FC = () => {
         </div>
       )}
 
-      {/* TAB 5: Staff Accounts & User Management */}
+      {/* TAB 7: Staff Accounts & Roles (Section 19) */}
       {activeTab === 'users' && (
-        <div className="space-y-6 animate-fadeIn">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#F1F7FC] p-4 rounded-xl border border-[#D6E4F0]">
-            <div>
-              <h3 className="text-sm font-bold text-[#17324D] flex items-center gap-2">
-                <Users className="w-4 h-4 text-[#0B477F]" />
-                <span>AICTE Staff Directory & Role Allocations</span>
-              </h3>
-              <p className="text-xs text-[#53677D] mt-0.5">
-                Manage council officer accounts, RBAC clearances, and bureau assignments without bypassing authentication.
-              </p>
-            </div>
-            <div className="text-xs font-semibold px-2.5 py-1 rounded bg-white text-[#0B477F] border border-[#D6E4F0]">
-              {users.length} Active Accounts
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Left 2 Cols: Staff Users Table */}
-            <div className="lg:col-span-2 bg-white rounded-xl border border-[#D6E4F0] p-5 shadow-xs">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-[#17324D] mb-3">
-                Authorized Personnel Directory
-              </h4>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-[#D6E4F0] text-[#53677D] font-bold">
-                      <th className="py-2.5 px-3">Officer Name</th>
-                      <th className="py-2.5 px-3">Portal Clearance</th>
-                      <th className="py-2.5 px-3">Assigned Bureau</th>
-                      <th className="py-2.5 px-3">Designation</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#D6E4F0]">
-                    {users.map((u) => (
-                      <tr key={u.id} className="hover:bg-slate-50/60">
-                        <td className="py-2.5 px-3">
-                          <div className="font-bold text-[#17324D]">{u.name}</div>
-                          <div className="text-[11px] text-[#53677D] font-mono">{u.email}</div>
-                        </td>
-                        <td className="py-2.5 px-3">
-                          <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                              u.role === 'admin'
-                                ? 'bg-purple-100 text-purple-800'
-                                : u.role === 'bureau_officer' || u.role === 'officer'
-                                ? 'bg-blue-100 text-blue-800'
-                                : 'bg-slate-100 text-slate-700'
-                            }`}
-                          >
-                            {u.role === 'admin' ? 'Administration' : u.role === 'bureau_officer' || u.role === 'officer' ? 'Bureau Officer' : 'Public'}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-3 text-[#53677D]">
-                          {u.bureauName || 'Central Council'}
-                        </td>
-                        <td className="py-2.5 px-3 text-[#17324D] font-medium">
-                          {u.designation}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* Right Col: Add New Staff Member Form */}
-            <div className="bg-white rounded-xl border border-[#D6E4F0] p-5 shadow-xs space-y-4">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-[#17324D] flex items-center gap-1.5">
-                <UserPlus className="w-4 h-4 text-[#0B477F]" />
-                <span>Provision Staff Account</span>
-              </h4>
-
-              {userCreatedMsg && (
-                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800 font-semibold flex items-center gap-2">
-                  <Check className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>Account provisioned and RBAC clearance applied!</span>
-                </div>
-              )}
-
-              <form onSubmit={handleCreateUser} className="space-y-3 text-xs">
-                <div>
-                  <label className="block font-bold text-[#17324D] mb-1">Full Officer Name</label>
-                  <input
-                    type="text"
-                    required
-                    value={newUserName}
-                    onChange={(e) => setNewUserName(e.target.value)}
-                    placeholder="e.g. Dr. Rajeshwari Nair"
-                    className="w-full p-2 border border-[#D6E4F0] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#0B477F]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-[#17324D] mb-1">Official Email Address</label>
-                  <input
-                    type="email"
-                    required
-                    value={newUserEmail}
-                    onChange={(e) => setNewUserEmail(e.target.value)}
-                    placeholder="e.g. rnair.officer@aicte-demo.gov.in"
-                    className="w-full p-2 border border-[#D6E4F0] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#0B477F]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-[#17324D] mb-1">Portal Clearance Role</label>
-                  <select
-                    value={newUserRole}
-                    onChange={(e) => setNewUserRole(e.target.value as 'admin' | 'bureau_officer')}
-                    className="w-full p-2 border border-[#D6E4F0] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#0B477F]"
-                  >
-                    <option value="bureau_officer">Bureau Officer Portal</option>
-                    <option value="admin">Administration Portal</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block font-bold text-[#17324D] mb-1">Official Designation</label>
-                  <input
-                    type="text"
-                    required
-                    value={newUserDesignation}
-                    onChange={(e) => setNewUserDesignation(e.target.value)}
-                    placeholder="e.g. Deputy Director (Technical)"
-                    className="w-full p-2 border border-[#D6E4F0] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#0B477F]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-[#17324D] mb-1">Assigned Bureau Cell</label>
-                  <select
-                    value={newUserBureau}
-                    onChange={(e) => setNewUserBureau(e.target.value)}
-                    className="w-full p-2 border border-[#D6E4F0] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#0B477F]"
-                  >
-                    {bureaus.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.name} ({b.shortName})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <button
-                  type="submit"
-                  className="w-full py-2.5 px-4 bg-[#0B477F] hover:bg-[#064578] text-white rounded-lg font-bold shadow-xs transition-colors mt-2"
-                >
-                  Create & Authorize Account
-                </button>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 6: SLA & Priority Governance */}
-      {activeTab === 'sla' && (
-        <div className="space-y-8 animate-fadeIn">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Card 1: Configurable SLA & Redressal Rules */}
-            <div className="bg-white rounded-xl border border-[#D6E4F0] p-6 shadow-xs space-y-4">
-              <div className="flex items-center gap-2">
-                <Clock className="w-5 h-5 text-[#0B477F]" />
-                <div>
-                  <h3 className="text-base font-bold text-[#17324D]">Statutory SLA & Priority Rules</h3>
-                  <p className="text-xs text-[#53677D]">Configure institutional complaint timelines and alert thresholds.</p>
-                </div>
-              </div>
-
-              {slaSavedMsg && (
-                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800 font-semibold flex items-center gap-2">
-                  <Check className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>SLA rules successfully updated and synchronized across all bureaus!</span>
-                </div>
-              )}
-
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  updateSettings({
-                    defaultDeadlineNormal: Number(slaNormal),
-                    defaultDeadlineUrgent: Number(slaUrgent),
-                    approachingDeadlineDays: Number(approachingDays),
-                    overdueEscalationDays: Number(escalationDays),
-                    similarityThreshold: Number(similarityThresh)
-                  });
-                  setSlaSavedMsg(true);
-                  setTimeout(() => setSlaSavedMsg(false), 3000);
-                }}
-                className="space-y-4 text-xs"
-              >
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block font-bold text-[#17324D] mb-1">Normal Priority SLA (Days)</label>
-                    <input
-                      type="number"
-                      min={7}
-                      max={90}
-                      value={slaNormal}
-                      onChange={(e) => setSlaNormal(Number(e.target.value))}
-                      className="w-full p-2 border border-[#D6E4F0] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#0B477F]"
-                    />
-                    <p className="text-[10px] text-[#53677D] mt-0.5">Standard grievance target</p>
-                  </div>
-                  <div>
-                    <label className="block font-bold text-[#17324D] mb-1">Urgent / Critical SLA (Days)</label>
-                    <input
-                      type="number"
-                      min={3}
-                      max={30}
-                      value={slaUrgent}
-                      onChange={(e) => setSlaUrgent(Number(e.target.value))}
-                      className="w-full p-2 border border-[#D6E4F0] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#0B477F]"
-                    />
-                    <p className="text-[10px] text-[#53677D] mt-0.5">High-priority & ragging target</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block font-bold text-[#17324D] mb-1">Approaching Alert Window (Days)</label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={14}
-                      value={approachingDays}
-                      onChange={(e) => setApproachingDays(Number(e.target.value))}
-                      className="w-full p-2 border border-[#D6E4F0] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#0B477F]"
-                    />
-                    <p className="text-[10px] text-[#53677D] mt-0.5">Warning trigger before deadline</p>
-                  </div>
-                  <div>
-                    <label className="block font-bold text-[#17324D] mb-1">Overdue Escalation Trigger (Days)</label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={20}
-                      value={escalationDays}
-                      onChange={(e) => setEscalationDays(Number(e.target.value))}
-                      className="w-full p-2 border border-[#D6E4F0] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#0B477F]"
-                    />
-                    <p className="text-[10px] text-[#53677D] mt-0.5">Escalate to Member Secretary</p>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block font-bold text-[#17324D] mb-1">
-                    Related Case Heuristic Threshold ({similarityThresh}%)
-                  </label>
-                  <input
-                    type="range"
-                    min={30}
-                    max={90}
-                    value={similarityThresh}
-                    onChange={(e) => setSimilarityThresh(Number(e.target.value))}
-                    className="w-full accent-[#0B477F]"
-                  />
-                  <div className="flex justify-between text-[10px] text-[#53677D]">
-                    <span>Broad Match (30%)</span>
-                    <span>Standard (55%)</span>
-                    <span>Strict Match (90%)</span>
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  className="w-full py-2.5 px-4 bg-[#0B477F] hover:bg-[#155A91] text-white rounded-lg font-bold shadow-xs transition-colors"
-                >
-                  Save Statutory SLA Rules
-                </button>
-              </form>
-            </div>
-
-            {/* Card 2: Individual Case Deadline Extension Tool */}
-            <div className="bg-white rounded-xl border border-[#D6E4F0] p-6 shadow-xs space-y-4">
-              <div className="flex items-center gap-2">
-                <History className="w-5 h-5 text-indigo-700" />
-                <div>
-                  <h3 className="text-base font-bold text-[#17324D]">Statutory Deadline Modification</h3>
-                  <p className="text-xs text-[#53677D]">Authorize deadline extensions with mandatory regulatory justification.</p>
-                </div>
-              </div>
-
-              {dlSavedMsg && (
-                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800 font-semibold flex items-center gap-2">
-                  <Check className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>Deadline extension recorded in case history and audit log!</span>
-                </div>
-              )}
-
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (!dlCaseId || !newDlDate || !dlReason.trim()) return;
-                  updateComplaintDeadline(dlCaseId, newDlDate, dlReason.trim());
-                  setDlSavedMsg(true);
-                  setDlReason('');
-                  setTimeout(() => setDlSavedMsg(false), 3500);
-                }}
-                className="space-y-3 text-xs"
-              >
-                <div>
-                  <label className="block font-bold text-[#17324D] mb-1">Select Active Case Docket</label>
-                  <select
-                    value={dlCaseId}
-                    onChange={(e) => setDlCaseId(e.target.value)}
-                    className="w-full p-2 border border-[#D6E4F0] rounded-lg focus:outline-none"
-                  >
-                    {complaints
-                      .filter((c) => c.status !== 'Closed')
-                      .map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.id} - {c.institutionName.slice(0, 30)}... (Current SLA: {c.deadlineDate})
-                        </option>
-                      ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block font-bold text-[#17324D] mb-1">Revised Target Deadline</label>
-                  <input
-                    type="date"
-                    required
-                    value={newDlDate}
-                    onChange={(e) => setNewDlDate(e.target.value)}
-                    className="w-full p-2 border border-[#D6E4F0] rounded-lg focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-[#17324D] mb-1">Official Regulatory Reason / Justification *</label>
-                  <textarea
-                    rows={3}
-                    required
-                    value={dlReason}
-                    onChange={(e) => setDlReason(e.target.value)}
-                    placeholder="Enter formal justification (e.g., Awaiting response to AICTE Show-Cause Notice ref AICTE/GRV/2026/88)..."
-                    className="w-full p-2 border border-[#D6E4F0] rounded-lg focus:outline-none"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  className="w-full py-2.5 px-4 bg-indigo-700 hover:bg-indigo-800 text-white rounded-lg font-bold shadow-xs transition-colors"
-                >
-                  Authorize Deadline Extension & Record Audit
-                </button>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
-      {allocationModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-xl max-w-lg w-full p-6 shadow-xl border border-[#D6E4F0]">
-            <div className="flex items-center justify-between mb-4">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-fadeIn">
+          <div className="lg:col-span-2 bg-white rounded-xl border border-[#D6E4F0] p-6 shadow-sm space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b">
               <h3 className="text-base font-bold text-[#17324D] flex items-center gap-2">
-                <UserCheck className="w-5 h-5 text-[#0B477F]" />
-                <span>Assign Complaint to Bureau & Officer</span>
+                <Users className="w-4 h-4 text-[#0B477F]" />
+                <span>Authorized Government Staff Directory ({users.length})</span>
               </h3>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="bg-slate-50 border-b text-slate-700 font-bold">
+                    <th className="py-2.5 px-3">Official Name</th>
+                    <th className="py-2.5 px-3">Role</th>
+                    <th className="py-2.5 px-3">Designation & Cell</th>
+                    <th className="py-2.5 px-3">Email Address</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {users.map(u => (
+                    <tr key={u.id} className="hover:bg-slate-50">
+                      <td className="py-2.5 px-3 font-bold text-[#17324D]">{u.name}</td>
+                      <td className="py-2.5 px-3">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-blue-50 text-[#0B477F] border border-blue-200">
+                          {u.role}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-600">{u.designation} &bull; {u.bureauName || 'Central'}</td>
+                      <td className="py-2.5 px-3 font-mono text-slate-500">{u.email}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Create User Form */}
+          <div className="bg-white rounded-xl border border-[#D6E4F0] p-6 shadow-sm space-y-4">
+            <h3 className="text-sm font-bold text-[#17324D] border-b pb-2">Register Official Account</h3>
+            {userCreatedMsg && (
+              <div className="p-3 bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 rounded font-bold">
+                Official staff account created successfully.
+              </div>
+            )}
+            <form onSubmit={handleCreateUser} className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Official Full Name</label>
+                <input
+                  type="text"
+                  required
+                  value={newUserName}
+                  onChange={e => setNewUserName(e.target.value)}
+                  placeholder="e.g. Dr. Satish Chandra"
+                  className="w-full text-xs p-2 border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#0B477F]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Government Email</label>
+                <input
+                  type="email"
+                  required
+                  value={newUserEmail}
+                  onChange={e => setNewUserEmail(e.target.value)}
+                  placeholder="e.g. satish.c@aicte-demo.gov.in"
+                  className="w-full text-xs p-2 border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#0B477F]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Designated Role</label>
+                <select
+                  value={newUserRole}
+                  onChange={e => setNewUserRole(e.target.value as any)}
+                  className="w-full text-xs p-2 border rounded-lg bg-white"
+                >
+                  <option value="bureau_officer">Bureau Desk Officer (Operational Desk)</option>
+                  <option value="admin">Central Administrator (Nodal Governance)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Bureau Assignment</label>
+                <select
+                  value={newUserBureau}
+                  onChange={e => setNewUserBureau(e.target.value)}
+                  className="w-full text-xs p-2 border rounded-lg bg-white"
+                >
+                  {bureaus.map(b => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </select>
+              </div>
+
               <button
-                type="button"
-                onClick={() => setAllocationModalOpen(false)}
-                className="text-[#53677D] hover:text-[#17324D] text-lg font-bold"
+                type="submit"
+                className="w-full py-2.5 bg-[#0B477F] text-white text-xs font-bold rounded-lg hover:bg-[#155A91] transition flex items-center justify-center gap-1.5"
               >
-                &times;
+                <UserPlus className="w-4 h-4" />
+                <span>Create Staff Account</span>
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 8: Priority & SLA Governance (Section 13) */}
+      {activeTab === 'sla' && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-fadeIn">
+          {/* Global Parameters */}
+          <div className="bg-white rounded-xl border border-[#D6E4F0] p-6 shadow-sm space-y-4">
+            <h3 className="text-base font-bold text-[#17324D] flex items-center gap-2 border-b pb-2">
+              <Clock className="w-4 h-4 text-orange-600" />
+              <span>Statutory Turnaround Parameters</span>
+            </h3>
+            {slaSavedMsg && (
+              <div className="p-3 bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 rounded font-bold">
+                SLA parameters saved and synchronized with background monitors.
+              </div>
+            )}
+            <form onSubmit={handleSaveSLA} className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Default Turnaround (Normal Cases - Days)</label>
+                <input
+                  type="number"
+                  min={5}
+                  max={60}
+                  value={slaNormal}
+                  onChange={e => setSlaNormal(Number(e.target.value))}
+                  className="w-full text-xs p-2 border rounded-lg"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Default Turnaround (Urgent / Ragging - Days)</label>
+                <input
+                  type="number"
+                  min={3}
+                  max={30}
+                  value={slaUrgent}
+                  onChange={e => setSlaUrgent(Number(e.target.value))}
+                  className="w-full text-xs p-2 border rounded-lg"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Approaching SLA Warning Window (Days)</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={approachingDays}
+                  onChange={e => setApproachingDays(Number(e.target.value))}
+                  className="w-full text-xs p-2 border rounded-lg"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-2.5 bg-[#0B477F] text-white text-xs font-bold rounded-lg hover:bg-[#155A91] transition"
+              >
+                Save Statutory SLA Parameters
+              </button>
+            </form>
+          </div>
+
+          {/* Individual Deadline Extension */}
+          <div className="bg-white rounded-xl border border-[#D6E4F0] p-6 shadow-sm space-y-4">
+            <h3 className="text-base font-bold text-[#17324D] flex items-center gap-2 border-b pb-2">
+              <History className="w-4 h-4 text-[#0B477F]" />
+              <span>Formal Deadline Extension Audit Tool</span>
+            </h3>
+            {dlSavedMsg && (
+              <div className="p-3 bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 rounded font-bold">
+                Deadline extension granted and recorded in case audit history.
+              </div>
+            )}
+            <form onSubmit={handleExtendDeadline} className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Target Complaint</label>
+                <select
+                  value={dlCaseId}
+                  onChange={e => setDlCaseId(e.target.value)}
+                  className="w-full text-xs p-2 border rounded-lg bg-white"
+                >
+                  {complaints.filter(c => c.status !== 'Closed').map(c => (
+                    <option key={c.id} value={c.id}>{c.id} - {c.institutionName} (Due: {c.deadlineDate})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">New Statutory Deadline Date</label>
+                <input
+                  type="date"
+                  required
+                  value={newDlDate}
+                  onChange={e => setNewDlDate(e.target.value)}
+                  className="w-full text-xs p-2 border rounded-lg"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Mandatory Extension Justification</label>
+                <textarea
+                  rows={2}
+                  required
+                  value={dlReason}
+                  onChange={e => setDlReason(e.target.value)}
+                  placeholder="Specify legal or inquiry justification for extension..."
+                  className="w-full text-xs p-2 border rounded-lg"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-2.5 bg-orange-700 text-white text-xs font-bold rounded-lg hover:bg-orange-800 transition"
+              >
+                Grant & Record Deadline Extension
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Desk Investigation Drawer / Modal (Transferred from Officer Portal) */}
+      {selectedDeskCase && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex justify-end animate-fadeIn">
+          <div className="w-full max-w-4xl bg-white h-full shadow-2xl flex flex-col overflow-hidden border-l border-slate-300">
+            <div className="bg-[#0B477F] text-white p-4 flex items-center justify-between border-b-2 border-amber-400 shrink-0">
+              <div className="flex items-center gap-3">
+                <span className="font-mono text-sm px-2.5 py-1 bg-white/10 rounded font-bold border border-white/20 text-amber-300">
+                  {selectedDeskCase.id}
+                </span>
+                <div>
+                  <h3 className="font-bold text-base text-white">{selectedDeskCase.title}</h3>
+                  <p className="text-xs text-blue-200">
+                    {selectedDeskCase.institutionName} • Registered: {formatDate(selectedDeskCase.submissionDate)}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedDeskCaseId(null)}
+                className="p-1.5 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition"
+              >
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            {assignSuccess ? (
-              <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-5 text-center space-y-2">
-                <Check className="w-8 h-8 text-emerald-600 mx-auto" />
-                <p className="text-sm font-bold text-emerald-800">Case Assigned Successfully!</p>
-                <p className="text-xs text-emerald-700">Audit trail updated.</p>
+            {deskSuccessMsg && (
+              <div className="bg-emerald-50 border-b border-emerald-200 px-4 py-2 text-xs text-emerald-800 font-bold flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{deskSuccessMsg}</span>
               </div>
-            ) : (
-              <form onSubmit={handleAssign} className="space-y-4">
+            )}
+
+            <div className="flex border-b border-slate-200 bg-slate-50 px-4 shrink-0">
+              <button
+                onClick={() => setDeskDrawerTab('actions')}
+                className={`py-3 px-4 text-xs font-bold border-b-2 flex items-center gap-1.5 transition ${
+                  deskDrawerTab === 'actions' ? 'border-[#0B477F] text-[#0B477F] bg-white' : 'border-transparent text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Briefcase className="w-3.5 h-3.5" />
+                <span>Investigation Actions</span>
+              </button>
+              <button
+                onClick={() => setDeskDrawerTab('lifecycle')}
+                className={`py-3 px-4 text-xs font-bold border-b-2 flex items-center gap-1.5 transition ${
+                  deskDrawerTab === 'lifecycle' ? 'border-[#0B477F] text-[#0B477F] bg-white' : 'border-transparent text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <History className="w-3.5 h-3.5" />
+                <span>Lifecycle Flow & Tracker</span>
+              </button>
+              <button
+                onClick={() => setDeskDrawerTab('notes')}
+                className={`py-3 px-4 text-xs font-bold border-b-2 flex items-center gap-1.5 transition ${
+                  deskDrawerTab === 'notes' ? 'border-[#0B477F] text-[#0B477F] bg-white' : 'border-transparent text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <MessageCircle className="w-3.5 h-3.5" />
+                <span>Confidential Notes ({selectedDeskNotes.length})</span>
+              </button>
+              <button
+                onClick={() => setDeskDrawerTab('intel')}
+                className={`py-3 px-4 text-xs font-bold border-b-2 flex items-center gap-1.5 transition ${
+                  deskDrawerTab === 'intel' ? 'border-[#0B477F] text-[#0B477F] bg-white' : 'border-transparent text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                <span>Case Intelligence ({selectedDeskIntel.length})</span>
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-5 space-y-6">
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
                 <div>
-                  <label className="block text-xs font-bold text-[#17324D] mb-1">
-                    Select Complaint
-                  </label>
-                  <select
-                    value={selectedComplaintId}
-                    onChange={(e) => setSelectedComplaintId(e.target.value)}
+                  <span className="text-slate-500 block">Category</span>
+                  <span className="font-semibold text-slate-800">{selectedDeskCase.category}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block">Current Status</span>
+                  <span className="font-semibold text-blue-700">{selectedDeskCase.status}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block">Assigned Deadline</span>
+                  <span className="font-semibold text-slate-800">{formatDate(selectedDeskCase.deadlineDate)}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block">Complainant</span>
+                  <span className="font-semibold text-slate-800">{selectedDeskCase.complainantName || 'Confidential Student'}</span>
+                </div>
+              </div>
+
+              {/* Statement */}
+              <div className="bg-white border border-slate-200 rounded-lg p-4">
+                <h4 className="text-xs font-bold text-slate-700 uppercase mb-2">Complaint Statement</h4>
+                <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">{selectedDeskCase.description}</p>
+                {selectedDeskCase.institutionRemarks && (
+                  <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded text-xs text-amber-900">
+                    <span className="font-bold block mb-1">Institution Rejoinder On Record:</span>
+                    <p>{selectedDeskCase.institutionRemarks}</p>
+                  </div>
+                )}
+                {selectedDeskCase.resolutionRecommendation && (
+                  <div className="mt-3 p-3 bg-emerald-50 border border-emerald-200 rounded text-xs text-emerald-900">
+                    <span className="font-bold block mb-1">Resolution Directives Drafted:</span>
+                    <p>{selectedDeskCase.resolutionRecommendation}</p>
+                  </div>
+                )}
+              </div>
+
+              {deskDrawerTab === 'actions' && (
+                <div className="space-y-4">
+                  {/* Action 1: Notice Demand */}
+                  <div className="border border-amber-200 bg-amber-50/40 rounded-lg p-4 space-y-2">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
+                      <Building className="w-4 h-4 text-amber-700" />
+                      <span>1. Demand Institution Explanation (Stage 6 Statutory Notice)</span>
+                    </h4>
+                    <form onSubmit={handleDeskDemandNotice} className="space-y-2">
+                      <textarea
+                        rows={2}
+                        required
+                        value={institutionQuery}
+                        onChange={e => setInstitutionQuery(e.target.value)}
+                        placeholder="State statutory inquiry notice text citing relevant AICTE norms..."
+                        className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded focus:ring-1 focus:ring-amber-500"
+                      />
+                      <button
+                        type="submit"
+                        className="px-3 py-1.5 bg-amber-700 text-white rounded text-xs font-bold hover:bg-amber-800 transition flex items-center gap-1.5"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        <span>Dispatch Statutory Notice</span>
+                      </button>
+                    </form>
+                  </div>
+
+                  {/* Action 2: Rejoinder */}
+                  <div className="border border-blue-200 bg-blue-50/40 rounded-lg p-4 space-y-2">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-blue-900 flex items-center gap-1.5">
+                      <FileCheck2 className="w-4 h-4 text-blue-700" />
+                      <span>2. Record Institution Rejoinder</span>
+                    </h4>
+                    <form onSubmit={handleDeskRecordRejoinder} className="space-y-2">
+                      <textarea
+                        rows={2}
+                        required
+                        value={institutionReply}
+                        onChange={e => setInstitutionReply(e.target.value)}
+                        placeholder="Summary of institution written reply or compliance documentation..."
+                        className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded focus:ring-1 focus:ring-blue-500"
+                      />
+                      <button
+                        type="submit"
+                        className="px-3 py-1.5 bg-[#0B477F] text-white rounded text-xs font-bold hover:bg-[#155A91] transition flex items-center gap-1.5"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Record Institution Rejoinder</span>
+                      </button>
+                    </form>
+                  </div>
+
+                  {/* Action 3: Citizen clarification */}
+                  <div className="border border-purple-200 bg-purple-50/40 rounded-lg p-4 space-y-2">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-purple-900 flex items-center gap-1.5">
+                      <HelpCircle className="w-4 h-4 text-purple-700" />
+                      <span>3. Request Student Clarification</span>
+                    </h4>
+                    <form onSubmit={handleDeskCitizenQuery} className="space-y-2">
+                      <textarea
+                        rows={2}
+                        required
+                        value={citizenQuery}
+                        onChange={e => setCitizenQuery(e.target.value)}
+                        placeholder="Detail evidence required from student..."
+                        className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded focus:ring-1 focus:ring-purple-500"
+                      />
+                      <button
+                        type="submit"
+                        className="px-3 py-1.5 bg-purple-700 text-white rounded text-xs font-bold hover:bg-purple-800 transition flex items-center gap-1.5"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        <span>Send Clarification Demand</span>
+                      </button>
+                    </form>
+                  </div>
+
+                  {/* Action 4: Recommend Resolution */}
+                  <div className="border-2 border-emerald-400 bg-emerald-50/50 rounded-lg p-4 space-y-2">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-900 flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+                      <span>4. Formulate & Recommend Resolution</span>
+                    </h4>
+                    <form onSubmit={handleDeskRecommendResolution} className="space-y-2">
+                      <textarea
+                        rows={3}
+                        required
+                        value={resolutionProposal}
+                        onChange={e => setResolutionProposal(e.target.value)}
+                        placeholder="Specify final resolution terms, refund mandates, or compliance directives..."
+                        className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded focus:ring-1 focus:ring-emerald-500"
+                      />
+                      <button
+                        type="submit"
+                        className="px-4 py-2 bg-emerald-700 text-white rounded text-xs font-bold hover:bg-emerald-800 transition flex items-center gap-1.5"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>Submit for Administrative Review</span>
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              )}
+
+              {deskDrawerTab === 'lifecycle' && (
+                <div className="space-y-4">
+                  <ComplaintLifecycleTracker complaint={selectedDeskCase} isPublic={false} />
+                </div>
+              )}
+
+              {deskDrawerTab === 'notes' && (
+                <div className="space-y-4">
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900 flex items-center gap-2">
+                    <Lock className="w-4 h-4 text-amber-700 shrink-0" />
+                    <span>Confidential Internal Deliberations — strictly restricted from citizen view.</span>
+                  </div>
+
+                  <form onSubmit={handleDeskAddNote} className="space-y-2">
+                    <textarea
+                      rows={2}
+                      required
+                      value={newNoteContent}
+                      onChange={e => setNewNoteContent(e.target.value)}
+                      placeholder="Add confidential officer note..."
+                      className="w-full text-xs p-2.5 border rounded"
+                    />
+                    <button
+                      type="submit"
+                      className="px-3 py-1.5 bg-[#0B477F] text-white text-xs font-bold rounded hover:bg-[#155A91] transition flex items-center gap-1.5"
+                    >
+                      <MessageSquarePlus className="w-3.5 h-3.5" />
+                      <span>Add Internal Note</span>
+                    </button>
+                  </form>
+
+                  <div className="space-y-2 pt-2 border-t">
+                    {selectedDeskNotes.length === 0 ? (
+                      <p className="text-xs text-slate-400 text-center py-4">No internal notes recorded yet.</p>
+                    ) : (
+                      selectedDeskNotes.map(n => (
+                        <div key={n.id} className="p-3 bg-slate-50 border rounded text-xs space-y-1">
+                          <div className="flex items-center justify-between text-slate-500 text-[11px]">
+                            <span className="font-bold text-slate-800">{n.authorName}</span>
+                            <span>{formatDate(n.timestamp)}</span>
+                          </div>
+                          <p className="text-slate-700 whitespace-pre-wrap">{n.content}</p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {deskDrawerTab === 'intel' && (
+                <div className="space-y-4">
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-900 flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-blue-700 shrink-0" />
+                    <span>Cross-Case Pattern & Related Filing Intelligence</span>
+                  </div>
+
+                  {selectedDeskIntel.length === 0 ? (
+                    <div className="py-8 text-center text-slate-400 text-xs">
+                      No related pattern suggestions detected for this case.
+                    </div>
+                  ) : (
+                    selectedDeskIntel.map(intel => (
+                      <div key={intel.id} className="p-3.5 border rounded-lg bg-white space-y-2 text-xs">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-slate-800">
+                            Linked with: <span className="font-mono text-[#0B477F]">{intel.relatedComplaintId}</span>
+                          </span>
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
+                            {Math.round(intel.overallScore || intel.textSimilarityScore)}% Match
+                          </span>
+                        </div>
+                        <p className="text-slate-600">{intel.explanation}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Task Modal (Section 16) */}
+      {newTaskModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-fadeIn">
+          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+            <div className="px-6 py-4 bg-slate-50 border-b flex items-center justify-between">
+              <h3 className="text-sm font-bold text-[#17324D] flex items-center gap-2">
+                <ListTodo className="w-4 h-4 text-amber-600" />
+                <span>Create Administrative Follow-up Task</span>
+              </h3>
+              <button onClick={() => setNewTaskModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateTask} className="p-6 space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Task Title / Directive *</label>
+                <input
+                  type="text"
+                  required
+                  value={newTaskTitle}
+                  onChange={e => setNewTaskTitle(e.target.value)}
+                  placeholder="e.g. Follow up on fee refund compliance receipt..."
+                  className="w-full text-xs p-2 border rounded-lg"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Associated Complaint File</label>
+                <select
+                  value={newTaskComplaintId}
+                  onChange={e => setNewTaskComplaintId(e.target.value)}
+                  className="w-full text-xs p-2 border rounded-lg bg-white"
+                >
+                  {complaints.filter(c => c.status !== 'Closed').map(c => (
+                    <option key={c.id} value={c.id}>{c.id} - {c.institutionName}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Target Due Date</label>
+                  <input
+                    type="date"
                     required
-                    className="w-full text-xs p-2.5 rounded-lg border border-[#D6E4F0] focus:ring-2 focus:ring-[#0B477F] focus:outline-none"
-                  >
-                    <option value="">-- Choose a Complaint --</option>
-                    {complaints.map(c => (
-                      <option key={c.id} value={c.id}>
-                        {c.id} - {c.title.substring(0, 48)}... ({c.bureauName || 'Unassigned'})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-[#17324D] mb-1">
-                    Target Bureau / Cell
-                  </label>
-                  <select
-                    value={targetBureauId}
-                    onChange={(e) => setTargetBureauId(e.target.value)}
-                    className="w-full text-xs p-2.5 rounded-lg border border-[#D6E4F0] focus:ring-2 focus:ring-[#0B477F] focus:outline-none"
-                  >
-                    {bureaus.map(b => (
-                      <option key={b.id} value={b.id}>
-                        {b.name} ({b.code})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-[#17324D] mb-1">
-                    Assigned Handling Officer
-                  </label>
-                  <select
-                    value={targetOfficerId}
-                    onChange={(e) => setTargetOfficerId(e.target.value)}
-                    className="w-full text-xs p-2.5 rounded-lg border border-[#D6E4F0] focus:ring-2 focus:ring-[#0B477F] focus:outline-none"
-                  >
-                    <option value="USR-OFFICER-01">Smt. Sunita Verma (Assistant Director / Grievance Cell)</option>
-                    <option value="USR-SUPERVISOR-01">Dr. P. K. Nambiar (Appellate Director / QA Bureau)</option>
-                    <option value="USR-ADMIN-01">Shri Arvind Saxena (Nodal Administrator)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-[#17324D] mb-1">
-                    Assignment Directives & Statutory Notes
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={assignNotes}
-                    onChange={(e) => setAssignNotes(e.target.value)}
-                    placeholder="Enter handling directions or turnaround mandate..."
-                    className="w-full text-xs p-2.5 rounded-lg border border-[#D6E4F0] focus:ring-2 focus:ring-[#0B477F] focus:outline-none"
+                    value={newTaskDueDate}
+                    onChange={e => setNewTaskDueDate(e.target.value)}
+                    className="w-full text-xs p-2 border rounded-lg"
                   />
                 </div>
-
-                <div className="flex justify-end gap-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setAllocationModalOpen(false)}
-                    className="px-4 py-2 border border-[#D6E4F0] rounded-lg text-xs font-semibold text-[#53677D] hover:bg-slate-50"
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Priority</label>
+                  <select
+                    value={newTaskPriority}
+                    onChange={e => setNewTaskPriority(e.target.value as any)}
+                    className="w-full text-xs p-2 border rounded-lg bg-white"
                   >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-5 py-2 bg-[#0B477F] text-white rounded-lg text-xs font-bold hover:bg-[#155A91] shadow-sm"
-                  >
-                    Confirm Assignment
-                  </button>
+                    <option value="Critical">Critical</option>
+                    <option value="High">High</option>
+                    <option value="Medium">Medium</option>
+                    <option value="Low">Low</option>
+                  </select>
                 </div>
-              </form>
-            )}
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setNewTaskModalOpen(false)}
+                  className="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 rounded-lg"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 bg-[#0B477F] text-white text-xs font-bold rounded-lg hover:bg-[#155A91]"
+                >
+                  Create Task
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Case Assignment Modal */}
+      {allocationModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-fadeIn">
+          <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+            <div className="px-6 py-4 bg-slate-50 border-b flex items-center justify-between">
+              <h3 className="text-base font-bold text-[#17324D] flex items-center gap-2">
+                <UserCheck className="w-4 h-4 text-[#0B477F]" />
+                <span>Assign Case to Bureau Unit</span>
+              </h3>
+              <button onClick={() => setAllocationModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAssign} className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Target Complaint</label>
+                <select
+                  value={selectedComplaintId}
+                  onChange={e => setSelectedComplaintId(e.target.value)}
+                  className="w-full text-xs p-2 border rounded-lg bg-white"
+                >
+                  {complaints.filter(c => c.status !== 'Closed').map(c => (
+                    <option key={c.id} value={c.id}>{c.id} - {c.institutionName}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Target Bureau</label>
+                <select
+                  value={targetBureauId}
+                  onChange={e => setTargetBureauId(e.target.value)}
+                  className="w-full text-xs p-2 border rounded-lg bg-white"
+                >
+                  {bureaus.map(b => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Directives</label>
+                <textarea
+                  rows={2}
+                  value={assignNotes}
+                  onChange={e => setAssignNotes(e.target.value)}
+                  placeholder="Directives for desk officer..."
+                  className="w-full text-xs p-2 border rounded-lg"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setAllocationModalOpen(false)}
+                  className="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 rounded-lg"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-[#0B477F] text-white text-xs font-bold rounded-lg hover:bg-[#155A91]"
+                >
+                  Confirm Allocation
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

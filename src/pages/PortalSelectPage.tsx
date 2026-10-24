@@ -1,19 +1,20 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCaseTrack } from '../context/CaseTrackContext';
-import { UserRole } from '../types';
 import {
   Users,
   ShieldCheck,
-  Briefcase,
   CheckCircle2,
   ArrowRight,
   Lock,
-  Building2
+  Building2,
+  Briefcase,
+  Layers,
+  Sparkles
 } from 'lucide-react';
 
 interface PortalCardConfig {
-  role: 'public' | 'admin' | 'officer';
+  role: 'public' | 'admin';
   title: string;
   hindiTitle: string;
   tagline: string;
@@ -31,88 +32,62 @@ const PORTALS: PortalCardConfig[] = [
     role: 'public',
     title: 'Public Portal',
     hindiTitle: 'नागरिक एवं छात्र पोर्टल',
-    tagline: 'Student & Citizen Access',
-    description: 'Register complaints, track complaint status, and view updates on submitted complaints.',
+    tagline: 'Student & Citizen Redressal Access',
+    description: 'Submit grievances against technical institutions, track progress using statutory docket tokens, and provide requested clarifications.',
     demoUser: 'Ananya Sharma',
     demoDesignation: 'B.Tech Student & Complainant',
     icon: Users,
     features: [
-      'Register a Complaint',
-      'Track a Complaint',
-      'My Complaints',
-      'Complaint Status Timeline'
+      'Statutory Complaint Registration with Evidence Upload',
+      'Instant Case Token Generation & Printable Receipt',
+      'Real-Time Redressal Tracking (Token-Authenticated)',
+      'Public-Safe Redressal Timeline & Clarification Response'
     ],
     badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-200',
     buttonLabel: 'Enter Public Portal'
   },
   {
     role: 'admin',
-    title: 'Administration Portal',
-    hindiTitle: 'केंद्रीय प्रशासनिक पोर्टल',
-    tagline: 'Central Control & Governance',
-    description: 'Manage complaint records, assign cases to bureaus and officers, monitor progress, and oversee system operations.',
-    demoUser: 'Shri Arvind Saxena',
-    demoDesignation: 'Senior System Administrator & Nodal Incharge',
+    title: 'Government Officials Portal',
+    hindiTitle: 'शासकीय अधिकारी एवं केंद्रीय प्रशासनिक पोर्टल',
+    tagline: 'Central Administration & Bureau Command Center',
+    description: 'Unified administrative workspace for authorized AICTE officials, central administrators, and bureau desk officers. Combines 20 KPI monitoring cards, bureau unit operations, case allocation, document scrutiny, institution intelligence, and compliance audit.',
+    demoUser: 'Shri Arvind Saxena / Smt. Sunita Verma',
+    demoDesignation: 'Nodal Administrator / Bureau Grievance Officer',
     icon: ShieldCheck,
     features: [
-      'Administration Dashboard',
-      'Complaint Registry',
-      'Case Assignment',
-      'Institution History',
-      'Analytics and Reports',
-      'User and Role Management'
+      '20 Interactive KPI Monitoring Cards (Dedicated Filtered Views)',
+      'Integrated Bureau Units & Desk Investigation Workspaces',
+      'Intelligent Case Allocation with Workload Recommendations',
+      'Statutory Institution Notice & Rejoinder Verification',
+      'Priority, SLA & Deadline Governance with Extension Audits',
+      'Role-Aware AI Assistant & Compliance Analytics Reports'
     ],
     badgeColor: 'bg-blue-100 text-blue-800 border-blue-200',
-    buttonLabel: 'Enter Administration Portal'
-  },
-  {
-    role: 'officer',
-    title: 'Bureau Officer Portal',
-    hindiTitle: 'ब्यूरो अधिकारी कार्यस्थल',
-    tagline: 'Active Inquiry & Investigation',
-    description: 'Review assigned complaints, record actions, identify potentially related cases, and update case progress.',
-    demoUser: 'Smt. Sunita Verma',
-    demoDesignation: 'Assistant Director / Grievance Officer',
-    icon: Briefcase,
-    features: [
-      'Assigned Complaints',
-      'Complaint Details',
-      'Case Intelligence',
-      'Progress Updates',
-      'Institution-Wise History',
-      'Resolution Recommendations'
-    ],
-    badgeColor: 'bg-indigo-100 text-indigo-800 border-indigo-200',
-    buttonLabel: 'Enter Bureau Officer Portal'
+    buttonLabel: 'Enter Government Officials Portal'
   }
 ];
 
 export const PortalSelectPage: React.FC = () => {
   const { currentUser, switchUserRole, isAuthenticated } = useCaseTrack();
-  const [selectedRole, setSelectedRole] = useState<'public' | 'admin' | 'officer'>(
-    currentUser.role === 'officer' || currentUser.role === 'bureau_officer' ? 'officer' : currentUser.role === 'admin' ? 'admin' : 'public'
+  const [selectedRole, setSelectedRole] = useState<'public' | 'admin'>(
+    currentUser.role === 'public' ? 'public' : 'admin'
   );
   const navigate = useNavigate();
 
-  const handleSelectRole = (role: 'public' | 'admin' | 'officer') => {
+  const handleSelectRole = (role: 'public' | 'admin') => {
     setSelectedRole(role);
   };
 
-  const handleEnterPortal = (role: 'public' | 'admin' | 'officer') => {
+  const handleEnterPortal = (role: 'public' | 'admin') => {
     if (role === 'public') {
       switchUserRole('public');
       navigate('/portal/public');
-    } else if (role === 'admin') {
-      if (isAuthenticated && currentUser.role === 'admin') {
+    } else {
+      if (isAuthenticated && (currentUser.role === 'admin' || currentUser.role === 'bureau_officer' || currentUser.role === 'officer')) {
         navigate('/portal/admin');
       } else {
         navigate('/admin/login');
-      }
-    } else if (role === 'officer') {
-      if (isAuthenticated && (currentUser.role === 'bureau_officer' || currentUser.role === 'officer')) {
-        navigate('/portal/officer');
-      } else {
-        navigate('/officer/login');
       }
     }
   };
@@ -126,20 +101,20 @@ export const PortalSelectPage: React.FC = () => {
           <span>Role-Based Access Control • AICTE CMIS</span>
         </div>
 
-        <h1 className="text-3xl sm:text-4xl font-extrabold text-[#17324D] tracking-tight">
+        <h1 className="text-3xl sm:text-4xl font-black text-[#17324D] tracking-tight">
           Select Your Portal
         </h1>
-        <p className="text-base text-[#53677D] mt-2 font-normal">
-          Choose the portal that matches your role to access the appropriate complaint management services.
+        <p className="text-sm sm:text-base text-[#53677D] mt-2 font-normal">
+          Choose your authorized portal to access grievance redressal and complaint monitoring services.
         </p>
       </div>
 
-      {/* Exactly THREE large cards in a single row on desktop, stacking on mobile */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      {/* Two Professional Portals in Balanced Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-5xl mx-auto">
         {PORTALS.map(portal => {
           const Icon = portal.icon;
           const isSelected = selectedRole === portal.role;
-          const isCurrentActive = currentUser.role === portal.role;
+          const isCurrentActive = portal.role === 'public' ? currentUser.role === 'public' : currentUser.role !== 'public';
 
           return (
             <div
@@ -163,7 +138,7 @@ export const PortalSelectPage: React.FC = () => {
               {/* Active Badge */}
               {isCurrentActive && (
                 <div className="absolute top-5 right-5 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#0B477F] text-white">
-                  <span>Current Active</span>
+                  <span>Current Active Session</span>
                 </div>
               )}
 
@@ -183,7 +158,7 @@ export const PortalSelectPage: React.FC = () => {
                     <span className={`inline-block text-[11px] font-semibold px-2 py-0.5 rounded-md border ${portal.badgeColor} mb-1`}>
                       {portal.tagline}
                     </span>
-                    <h3 className="text-xl font-bold text-[#17324D] leading-snug">
+                    <h3 className="text-xl font-black text-[#17324D] leading-snug">
                       {portal.title}
                     </h3>
                     <p className="text-xs text-[#53677D] font-medium">{portal.hindiTitle}</p>
@@ -191,19 +166,19 @@ export const PortalSelectPage: React.FC = () => {
                 </div>
 
                 {/* Description */}
-                <p className="text-sm text-[#53677D] leading-relaxed mb-6 min-h-[48px]">
+                <p className="text-xs sm:text-sm text-[#53677D] leading-relaxed mb-6">
                   {portal.description}
                 </p>
 
                 {/* Feature highlights */}
                 <div className="space-y-2 mb-6">
                   <p className="text-xs font-bold text-[#17324D] uppercase tracking-wider">
-                    Core Services:
+                    Core Services & Modules:
                   </p>
                   <ul className="space-y-2 text-xs text-[#53677D]">
                     {portal.features.map((feat, idx) => (
-                      <li key={idx} className="flex items-center gap-2">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <li key={idx} className="flex items-start gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                         <span className="font-medium text-[#17324D]">{feat}</span>
                       </li>
                     ))}
@@ -215,7 +190,7 @@ export const PortalSelectPage: React.FC = () => {
               <div className="pt-5 border-t border-[#D6E4F0]">
                 <div className="bg-[#F1F7FC] rounded-xl p-3 mb-4">
                   <div className="text-[10px] font-bold text-[#53677D] uppercase tracking-wider">
-                    Authorized Demo Account:
+                    Authorized Demo Credentials:
                   </div>
                   <div className="text-xs font-bold text-[#17324D] truncate mt-0.5">
                     {portal.demoUser}
@@ -247,17 +222,17 @@ export const PortalSelectPage: React.FC = () => {
       </div>
 
       {/* Security and RBAC Notice Bar */}
-      <div className="bg-white rounded-xl border border-[#D6E4F0] p-6 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div className="bg-white rounded-xl border border-[#D6E4F0] p-6 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4 max-w-5xl mx-auto">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-[#E5F1FC] text-[#0B477F] flex items-center justify-center shrink-0">
             <Lock className="w-5 h-5" />
           </div>
           <div>
             <h4 className="text-sm font-bold text-[#17324D]">
-              Role-Based Security & Governance
+              Role-Based Security & Integrated Bureau Operations
             </h4>
             <p className="text-xs text-[#53677D]">
-              Entering a portal verifies your role authorization. Public users cannot access administration records or officer dockets.
+              Government Officials portal combines central administrative supervision and bureau desk operations with strict, least-privilege role authorization.
             </p>
           </div>
         </div>

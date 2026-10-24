@@ -22,14 +22,12 @@ import { PresentationModePage } from './pages/PresentationModePage';
 import { AboutArchitecturePage } from './pages/AboutArchitecturePage';
 import { LoginPage } from './pages/LoginPage';
 
-// Dedicated Secure Login Pages
+// Dedicated Secure Login Page
 import { AdminLoginPage } from './pages/auth/AdminLoginPage';
-import { OfficerLoginPage } from './pages/auth/OfficerLoginPage';
 
-// Exactly 3 Dedicated Role Dashboards
+// Consolidated Portal Dashboards
 import { PublicDashboardPage } from './pages/dashboards/PublicDashboardPage';
 import { AdminDashboardPage } from './pages/dashboards/AdminDashboardPage';
-import { OfficerDashboardPage } from './pages/dashboards/OfficerDashboardPage';
 
 export const App: React.FC = () => {
   return (
@@ -38,7 +36,8 @@ export const App: React.FC = () => {
         <Routes>
           {/* Standalone Authentication Pages */}
           <Route path="/admin/login" element={<AdminLoginPage />} />
-          <Route path="/officer/login" element={<OfficerLoginPage />} />
+          <Route path="/officer/login" element={<Navigate to="/admin/login" replace />} />
+          <Route path="/officials/login" element={<AdminLoginPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/presentation" element={<PresentationModePage />} />
 
@@ -52,29 +51,26 @@ export const App: React.FC = () => {
             <Route path="/portals" element={<PortalSelectPage />} />
             <Route path="/portal-select" element={<PortalSelectPage />} />
 
-            {/* 3. Exactly Three Dedicated Role Portals */}
+            {/* 3. Consolidated Government Portals */}
             <Route
               path="/portal/public"
               element={<PublicDashboardPage />}
             />
+            {/* Unified Government Officials Portal (Central Administration & Integrated Bureau Operations) */}
             <Route
               path="/portal/admin"
               element={
-                <ProtectedRoute allowedRoles={['admin']}>
+                <ProtectedRoute allowedRoles={['admin', 'bureau_officer', 'officer']}>
                   <AdminDashboardPage />
                 </ProtectedRoute>
               }
             />
-            <Route
-              path="/portal/officer"
-              element={
-                <ProtectedRoute allowedRoles={['bureau_officer', 'officer']}>
-                  <OfficerDashboardPage />
-                </ProtectedRoute>
-              }
-            />
+            <Route path="/portal/officials" element={<Navigate to="/portal/admin" replace />} />
 
-            {/* Legacy Portal Route Redirects to Consolidated Admin Portal */}
+            {/* Former Bureau Officer Route Permanently Redirects to Government Officials Portal */}
+            <Route path="/portal/officer" element={<Navigate to="/portal/admin" replace />} />
+
+            {/* Legacy Portal Route Redirects to Consolidated Government Officials Portal */}
             <Route path="/portal/verification" element={<Navigate to="/portal/admin" replace />} />
             <Route path="/portal/supervisor" element={<Navigate to="/portal/admin" replace />} />
             <Route path="/portal/management" element={<Navigate to="/portal/admin" replace />} />
